@@ -1,0 +1,241 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "sphereSchema": {
+      "type": "object",
+      "required": ["shape"],
+      "properties": {
+        "shape": {
+          "type": "string",
+          "enum": ["sphere"]
+        },
+        "size_distribution": {},
+        "diameter": {
+          "type": "number",
+          "description": "The bubble diameter [m].",
+          "exclusiveMinimum": 0.0
+        },
+        "mean_ln_diameter": {
+          "type": "number",
+          "description": "The mean of natural logarithm of the sphere-volume-equivalent bubble diameter [ln(m)]."
+        },
+        "sd_ln_diameter": {
+          "type": "number",
+          "description": "The standard deviation of the natural logarithm of the sphere-volume-equivalent bubble diameter [ln(m)]."
+        }
+      },
+      "oneOf":[
+        {
+          "properties": {
+            "size_distribution": {
+              "const": "constant"
+            }
+          },
+          "required": ["diameter"]
+        },
+        {
+          "properties": {
+           "size_distribution": {
+              "const": "lognormal"
+            }
+          },
+          "required": ["mean_ln_diameter","sd_ln_diameter"]
+        }
+      ]
+    },
+    "ellipsoidSchema": {
+      "type": "object",
+      "required": ["shape"],
+      "properties": {
+        "shape": {
+          "type": "string",
+          "enum": ["ellipsoid"]
+        },
+        "size_distribution": {},
+        "diameter": {
+          "type": "number",
+          "description": "The sphere-volume-equivalent bubble diameter [m].",
+          "exclusiveMinimum": 0.0
+        },
+        "mean_ln_diameter": {
+          "type": "number",
+          "description": "The mean of natural logarithm of the sphere-volume-equivalent bubble diameter [ln(m)]."
+        },
+        "sd_ln_diameter": {
+          "type": "number",
+          "description": "The standard of natural logarithm of the sphere-volume-equivalent bubble diameter [ln(m)]."
+        },
+        "aspect_ratio_type": {
+          "description": "Type of aspect ratio: constant or dynamic (Aoyama et al. 2016)."
+        },
+        "aspect_ratio_value": {
+          "type": "number",
+          "description": "The aspect ratio, which is the ratio of the secondary bubble axis dimension to the primary bubble axis dimension [m].",
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0
+        },
+        "slip_velocity_ratio": {
+          "type": "number",
+          "description": "Ratio between bubble slip velocity and the main flow velocity [-]. Remark: This does not affect the bubble motion, but is only an assumpiton to calculate the bubble Reynold's number, which in turn is used to calculate the aspect ratio.",
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.05
+        }
+      },
+      "oneOf":[
+        {
+          "properties": {
+            "size_distribution": {
+              "const": "constant"
+            }
+          },
+          "required": ["diameter"]
+        },
+        {
+          "properties": {
+           "size_distribution": {
+              "const": "lognormal"
+            }
+          },
+          "required": ["mean_ln_diameter","sd_ln_diameter"]
+        }
+      ],
+      "oneOf":[
+        {
+          "properties": {
+            "aspect_ratio_type": {
+              "const": "constant"
+            }
+          },
+          "required": ["aspect_ratio_value"]
+        },
+        {
+          "properties": {
+           "aspect_ratio_type": {
+              "const": "Aoyama"
+            }
+          },
+          "required": ["slip_velocity_ratio"]
+        },
+        {
+          "properties": {
+           "aspect_ratio_type": {
+              "const": "Vakhrushev"
+            }
+          },
+          "required": ["slip_velocity_ratio"]
+        }
+      ]
+    }
+  },
+  "type": "object",
+  "required": ["FLOW_PROPERTIES", "PROBE", "REPRODUCIBLE"],
+  "properties": {
+    "FLOW_PROPERTIES": {
+      "type": "object",
+      "description": "Flow properties for generating the velocity time series.",
+      "required": ["mean_velocity", "turbulent_intensity", "integral_timescale", "bubbles", "void_fraction", "realization_frequency", "duration"],
+      "optional": ["ti_factor"],
+      "properties": {
+        "mean_velocity": {
+          "type": "array",
+          "description": "The mean flow velocity components (x,y,z) [m/s].",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "number"
+          }
+        },
+        "turbulent_intensity": {
+          "type": "array",
+          "description": "The (x,y,z) components of the turbulent intensity [-].",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "number",
+            "mininum": 0.0
+          }
+        },
+        "ti_factor": {
+          "type": "number",
+          "description": "Factor for the turbulent intensity [-].",
+          "default": 1.0
+        },
+        "integral_timescale": {
+          "type": "array",
+          "description": "The (x,y,z) components of the integral time scales [-].",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "number",
+            "exclusiveMinimum": 0.0
+          }
+        },
+        "void_fraction": {
+          "type": "number",
+          "description": "The void fraction [-].",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "duration": {
+          "type": "number",
+          "description": "Duration of the generated time series [s].",
+          "exclusiveMinimum": 0.0
+        },
+        "realization_frequency": {
+          "type": "number",
+          "description": "Number of velocity realizations per second [Hz].",
+          "exclusiveMinimum": 0.0
+        },
+        "bubbles": {
+          "type": "object",
+          "oneOf": [
+              { "$ref":"#/definitions/sphereSchema"},
+              { "$ref":"#/definitions/ellipsoidSchema"}
+          ]
+        }
+      }
+    },
+    "PROBE": {
+      "type": "object",
+      "description": "The setup of the multi-tip probe.",
+      "required": ["sampling_frequency", "sensors"],
+      "properties": {
+        "sampling_frequency": {
+          "type": "number",
+          "description": "The sampling frequency of the sensors [Hz].",
+          "exclusiveMinimum": 0.0
+        },
+        "sensors": {
+          "type": "array",
+          "description": "Array containing the individual sensors.",
+          "items": {
+            "type": "object",
+            "description": "This is a single sensor.",
+            "required": ["id", "relative_location"],
+            "properties": {
+              "id": {
+                "type": "number",
+                "description": "The ID of the sensor."
+              },
+              "relative_location": {
+                "type": "array",
+                "description": "The (x,y,z) components of the relative sensor location [m].",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "REPRODUCIBLE": {
+      "type": "string",
+      "description": "Define the reproducability of the process.",
+      "enum": ["yes", "no"]
+    }
+  }
+}

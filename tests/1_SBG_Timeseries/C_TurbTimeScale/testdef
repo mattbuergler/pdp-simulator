@@ -1,0 +1,22 @@
+{
+  "SBG": "all",
+  "RA": "yes",
+  "eval": "yes",
+  "files":
+  [
+    {
+      "file": "flow_data.h5",
+      "dataset" : "flow/velocity",
+      "tag": "compare velocity time series",
+      "rel": 1e-6,
+      "abs": 1e-6
+    },
+    {
+      "file": "flow_data.h5",
+      "dataset" : "flow/trajectory",
+      "tag": "compare trajectory time series",
+      "rel": 1e-6,
+      "abs": 1e-6
+    }
+  ]
+}

@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+
+import sys
+import argparse
+import pathlib
+import json
+import jsonschema
+import numpy as np
+import pandas as pd
+import bisect
+import time
+import math
+import matplotlib.pyplot as plt
+try:
+    from dataio.H5Writer import H5Writer
+    from dataio.H5Reader import H5Reader
+    from tools.globals import *
+except ImportError:
+    print("Error while importing modules")
+    raise
+"""
+    Evaluate the reconstructed data
+
+"""
+
+def main():
+    """
+        Main function of the the evaluation
+    """
+    # Start timer
+    t_start = time.time()
+    # Create parser to read in the configuration JSON-file to read from
+    # the command line interface (CLI)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('path', type=str,
+        help="The path to the scenario directory.")
+    args = parser.parse_args()
+
+    # Create Posix path for OS indepency
+    path = pathlib.Path(args.path)
+    config_file = path / 'config.json'
+    # Read the configuation JSON-file
+    config = json.loads(config_file.read_bytes())
+    # Load the schema
+    schema_file = pathlib.Path(sys.argv[0]).parents[0] / 'schemadef' / 'config_schema.json'
+    schema = json.loads(schema_file.read_bytes())
+    # Validate the configuration file
+    jsonschema.validate(instance=config, schema=schema)
+    # Get mean flow velocity and duration
+    fp_vel = config['FLOW_PROPERTIES']['mean_velocity']
+    fp_dur = config['FLOW_PROPERTIES']['duration']
+
+    # Parse velocity time series
+    # Create a H5-file reader
+    reader = H5Reader(path / 'flow_data.h5')
+    # Read the velocity time series
+    vel = reader.getDataSet('flow/velocity')[:]
+    # Read the time vector
+    t_vel = reader.getDataSet('flow/time')[:]
+    # Read the bubble size
+    b_size = reader.getDataSet('bubbles/size')[:]
+    # Read the time vector
+    t_b_size = reader.getDataSet('bubbles/arrival_time')[:]
+    reader.close()
+    # Create a H5-file reader
+    reader = H5Reader(path / 'reconstructed.h5')
+    # Read the reconstructed velocity time series
+    vel_rec = reader.getDataSet('flow/velocity')[:]
+    # Read the reconstructed time vector
+    t_vel_rec = reader.getDataSet('flow/interaction_times')[:]
+    # Read the bubble sizecd t
+    b_size_rec = reader.getDataSet('bubbles/diameters')[:]
+    t_b_size_rec = reader.getDataSet('bubbles/interaction_times')[:]
+    reader.close()
+
+    # Convert to pandas array
+    error_v = np.empty((len(vel_rec),3))
+    rel_error_v = np.empty((len(vel_rec),3))
+    for ii in range(0,len(t_vel_rec)):
+        # Get the range of the velocity timeseries that encloses the timeframe
+        # of bubble-probe interaction (tfbpi)
+        id_t_min = max(bisect.bisect_right(t_vel, t_vel_rec[ii,0])-1, 0)
+        id_t_max = min(bisect.bisect_left(t_vel, t_vel_rec[ii,1]),len(t_vel))
+        # Mean of the velocity time series in the tfbpi
+        mean_vel = np.mean(vel[id_t_min:(id_t_max+1),:],axis=0)
+        print(f'DEBUG: vel = {vel[id_t_min:(id_t_max+1),:]}')
+        print(f'DEBUG: mean_vel = {mean_vel}')
+        print(f'DEBUG: vel_rec[ii,:] = {vel_rec[ii,:]}')
+        # The squared deviation (SD) of the reconstructed and true velocity
+        MSD_vel_rec = vel_rec[ii,:]- vel[id_t_min:(id_t_max+1),:]
+        MSD_vel = vel[id_t_min:(id_t_max+1),:] \
+                - np.mean(vel[id_t_min:(id_t_max+1),:],axis=0)
+        RMSD_reco = np.sqrt(MSD_vel_rec / (id_t_max-id_t_min))
+        RMSD_true = np.sqrt(MSD_vel / (id_t_max-id_t_min))
+        print(f'DEBUG: id_t_max-id_t_min = {id_t_max-id_t_min}')
+        print(f'DEBUG: MSD_vel_rec = {MSD_vel_rec}')
+        print(f'DEBUG: MSD_vel = {MSD_vel}')
+        print(f'DEBUG: RMSD_reco = {RMSD_reco}')
+        print(f'DEBUG: RMSD_true = {RMSD_true}')
+        # Get the mean of the true velocity over this timeframe
+        error_v[ii,:] = vel_rec[ii,:] \
+                      - np.mean(vel[id_t_min:(id_t_max+1),:],axis=0)
+        rel_error_v[ii,:] = (vel_rec[ii,:] \
+                          - np.mean(vel[id_t_min:(id_t_max+1),:],axis=0)) \
+                          / np.mean(vel[id_t_min:(id_t_max+1),:])
+        sys.exit()
+    # Convert to DataFrames
+    error = pd.DataFrame(error_v, index=np.mean(t_vel_rec,axis=1), columns=['Ux','Uy','Uz'])
+    rel_error = pd.DataFrame(rel_error_v, index=np.mean(t_vel_rec,axis=1), columns=['Ux','Uy','Uz'])
+
+    # Convert to pandas array
+    b_size = pd.DataFrame(b_size,index=t_b_size, columns=['A','B','C'])
+    # Calculate volumen equivalent diameter
+    b_size['D'] = (b_size['A']*b_size['B']*b_size['C'])**(1.0/3.0)
+    # Convert to pandas array
+    b_size_rec = pd.DataFrame(b_size_rec,index=np.mean(t_b_size_rec,axis=1), columns=['D_h_2h', 'D_h_2hp1'])
+    b_size_rec['D'] = (b_size_rec['D_h_2h'] + b_size_rec['D_h_2hp1'])/2.0
+    # Get timesteps of the reconstructed velocities that are NOT in present in
+    # the original time series
+    b_size_rec_unique = b_size_rec.index[np.invert(np.isin(b_size_rec.index, b_size.index))]
+    # Add times of reconstructed velocity field to original DataFrame with
+    # NaN-values and then interpolate
+    empty = pd.DataFrame(np.nan, index=b_size_rec_unique, columns=['D'])
+    b_size = b_size.append(empty).sort_index().interpolate()
+    # Caluculate error
+    error['D'] = b_size_rec['D'] -  b_size['D'][b_size_rec.index]
+    rel_error['D'] = (b_size_rec['D'] -  b_size['D'][b_size_rec.index]) \
+                    / b_size['D'][b_size_rec.index]
+
+    error_summary = pd.DataFrame(np.nan, \
+                                index=['MAE','RMSE','relMAE','relRMSE'], \
+                                columns=['Ux','Uy','Uz','D','nb'])
+    for col in error.columns:
+        # Mean Average Error
+        error_summary[col]['MAE'] = error[col].mean()
+        error_summary[col]['relMAE'] = rel_error[col].mean()
+        # Root Mean Square Error
+        error_sqr = error[col]**2
+        rel_error_sqr = rel_error[col]**2
+        error_summary[col]['RMSE'] = math.sqrt(error_sqr.sum()/len(error[col]))
+        error_summary[col]['relRMSE'] = math.sqrt(rel_error_sqr.sum() \
+                                        / len(rel_error[col]))
+
+    error_summary['nb']['MAE'] = len(t_b_size_rec) - len(t_b_size)
+    error_summary['nb']['RMSE'] = (len(t_b_size_rec) - len(t_b_size))**2
+    error_summary.to_csv(path / 'error_summary.csv', index=True)
+    rel_error.to_csv(path / 'rel_errors.csv', index=True)
+    error.to_csv(path / 'errors.csv', index=True)
+
+    # Plot parameters
+    plt.rcParams['font.family'] = 'serif'
+    plt.rcParams['font.sans-serif'] = ['Times New Roman']
+    plt.rcParams['xtick.major.pad']='6'
+    plt.rcParams['ytick.major.pad']='6'
+    plt.rcParams['mathtext.fontset'] = 'cm'
+
+    # Plot velocity time series
+    color = [0.2,0.2,0.2]
+    lw = 0.2
+    fig, axs = plt.subplots(3,figsize=(6,4))
+    axs[0].plot(t_vel,vel[:,0],color=color,lw=lw)
+    axs[1].plot(t_vel,vel[:,1],color=color,lw=lw)
+    axs[2].plot(t_vel,vel[:,2],color=color,lw=lw)
+    axs[0].plot(np.mean(t_vel_rec,axis=1),vel_rec[:,0],color='r',lw=0,marker='o')
+    axs[1].plot(np.mean(t_vel_rec,axis=1),vel_rec[:,1],color='r',lw=0,marker='o')
+    axs[2].plot(np.mean(t_vel_rec,axis=1),vel_rec[:,2],color='r',lw=0,marker='o')
+    axs[0].set_ylabel('$u_x$ [m/s]')
+    axs[1].set_ylabel('$u_y$ [m/s]')
+    axs[2].set_ylabel('$u_z$ [m/s]')
+    axs[2].set_xlabel('$t$ [s]')
+    lim = [[fp_vel[0] - 1.2*max(abs(vel[:,0]-fp_vel[0])),
+            fp_vel[0] + 1.2*max(abs(vel[:,0]-fp_vel[0]))],
+           [fp_vel[1] - 1.2*max(abs(vel[:,1]-fp_vel[1])),
+            fp_vel[1] + 1.2*max(abs(vel[:,1]-fp_vel[1]))],
+           [fp_vel[2] - 1.2*max(abs(vel[:,2]-fp_vel[2])),
+            fp_vel[2] + 1.2*max(abs(vel[:,2]-fp_vel[2]))]]
+    axs[0].set_ylim([lim[0][0],lim[0][1]])
+    axs[1].set_ylim([lim[1][0],lim[1][1]])
+    axs[2].set_ylim([lim[2][0],lim[2][1]])
+    axs[0].set_xlim([fp_dur/2.0,fp_dur/2.0+0.1])
+    axs[1].set_xlim([fp_dur/2.0,fp_dur/2.0+0.1])
+    axs[2].set_xlim([fp_dur/2.0,fp_dur/2.0+0.1])
+    plt.tight_layout()
+    fig.savefig(path / 'velocity_05s.svg',dpi=300)
+
+    np.random.seed(42)
+    n = 9
+    bubbles = np.random.uniform(low=0, high=len(t_vel_rec), size=n)
+    delta_t=0.001
+    fig, axs = plt.subplots(int(math.sqrt(n)),int(math.sqrt(n)),figsize=(6,6))
+    axs=axs.reshape(-1)
+    for ii,bubble in enumerate(bubbles):
+        bid = int(bubble)
+        axs[ii].plot(t_vel,vel[:,0],color='k',lw=1, label='true velocity')
+        axs[ii].hlines(vel_rec[bid,0],t_vel_rec[bid,0],t_vel_rec[bid,1],color='b',label='reconstr. velocity',zorder=100)
+        axs[ii].set_xlim([t_vel_rec[bid,0]-delta_t,t_vel_rec[bid,1]+delta_t])
+        axs[ii].set_ylim([0.9*min(vel[:,0][(t_vel>t_vel_rec[bid,0])&(t_vel<t_vel_rec[bid,1])]),1.1*max(vel[:,0][(t_vel>t_vel_rec[bid,0])&(t_vel<t_vel_rec[bid,1])])])
+        axs[ii].axvspan(t_vel_rec[bid,0],t_vel_rec[bid,1], alpha=0.5, color='r',label='bubble-probe interaction',zorder=10)
+        if (ii == n-int(math.sqrt(n))):
+            axs[ii].legend(loc=4,bbox_to_anchor=(4,-0.8),ncol=3)
+        if (ii % int(math.sqrt(n)) == 0):
+            axs[ii].set_ylabel('Velocity [m/s]')
+        if (ii >= n-int(math.sqrt(n))):
+            axs[ii].set_xlabel('Time [s]')
+    plt.subplots_adjust(left=0.1, bottom=0.2, right=0.95, top=0.95, wspace=0.4, hspace=0.3)
+    #plt.tight_layout()
+    fig.savefig(path / 'velocity_variation.svg',dpi=300)
+
+if __name__ == "__main__":
+    main()
