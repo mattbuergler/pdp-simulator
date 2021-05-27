@@ -5,8 +5,16 @@ variables:
   GIT_SUBMODULE_STRATEGY: normal
   DEBIAN_FRONTEND: noninteractive
 
-.only-full-tests-template: &only-full-tests-template
-  only:
-    refs:
-      - tags
-      - schedule
+
+.run-tests-template: &run-tests-template
+  script:
+    - tests/runtests.py \
+          -C \
+          -r \
+          -b {} \
+          tests/[0-9]*
+
+test:
+  stage: test
+  dependencies:
+  <<: *run-tests-template
