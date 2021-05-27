@@ -1,0 +1,12 @@
+stages:
+  - test
+
+variables:
+  GIT_SUBMODULE_STRATEGY: normal
+  DEBIAN_FRONTEND: noninteractive
+
+.only-full-tests-template: &only-full-tests-template
+  only:
+    refs:
+      - tags
+      - schedule
