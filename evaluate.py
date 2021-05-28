@@ -156,7 +156,7 @@ def main():
     summary_vel.to_csv(path / 'error_summary_velocity.csv', index=True)
 
     # Write number of bubbles
-    file1 = open("myfile.txt","w")
+    file1 = open(path / "n_bubbles.txt","w")
     file1.write(f"Input: {len(t_b_size)}\n")
     file1.write(f"Reconstructed: {len(t_b_size_rec)}\n")
     file1.close()
