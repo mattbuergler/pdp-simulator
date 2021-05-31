@@ -46,8 +46,8 @@ path = pathlib.Path(args.path)
 # Create a H5-file reader
 reader = H5Reader(path / 'flow_data.h5')
 # Read the time vector
-vel = reader.getDataSet('flow/velocity')[:]
-t = reader.getDataSet('flow/time')[:]
+vel = reader.getDataSet('fluid/velocity')[:]
+t = reader.getDataSet('fluid/time')[:]
 # Read the configuration data
 flow_props = json.loads(reader.getDataSet('.flow_properties')[0][0].decode("ascii").replace("'",'"'))
 reader.close()

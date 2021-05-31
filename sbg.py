@@ -70,10 +70,15 @@ def main():
     command = args.run
     if command in ["timeseries", 'all']:
         # Generate the stochastic velocity and trajectory time series
-        sbg_functions.SBG_auto_corr(
+        sbg_functions.SBG_fluid_velocity(
             path=path,
             flow_properties=config['FLOW_PROPERTIES'],
             reproducible=config['REPRODUCIBLE'],
+            progress=args.progress
+        )
+        sbg_functions.SBG_particle_velocity(
+            path=path,
+            flow_properties=config['FLOW_PROPERTIES'],
             progress=args.progress
         )
     if command in ["signal", 'all']:

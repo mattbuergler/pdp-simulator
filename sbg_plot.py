@@ -41,9 +41,9 @@ def plot_results(path, flow_properties):
         # Create a H5-file reader
         reader = H5Reader(vel_path)
         # Read the time vector
-        vel = reader.getDataSet('flow/velocity')[:]
+        vel = reader.getDataSet('fluid/velocity')[:]
         # Read the trajectory
-        t_vel = reader.getDataSet('flow/time')[:]
+        t_vel = reader.getDataSet('fluid/time')[:]
         reader.close()
 
 

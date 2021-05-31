@@ -168,7 +168,6 @@ def get_bubble_size(flow_properties):
 
 def get_mean_bubble_sve_size(flow_properties):
     # Returns mean sphere-volume-equivalent bubble size D_sve
-
     # Get bubble properties
     bubbles = flow_properties['bubbles']
     if bubbles['size_distribution'] == 'constant':
@@ -177,7 +176,7 @@ def get_mean_bubble_sve_size(flow_properties):
         D_sve = math.exp(bubbles['mean_ln_diameter'])
     return D_sve
 
-def SBG_auto_corr(path, flow_properties, reproducible, progress):
+def SBG_fluid_velocity(path, flow_properties, reproducible, progress):
     """SBG including correlation between u' and v' as well as autocorrelation
     in u(t) depending on integral time scale.
 
@@ -239,25 +238,25 @@ def SBG_auto_corr(path, flow_properties, reproducible, progress):
            [pXY, 1.0, pYZ], \
            [pXZ, pYZ, 1.0]]
 
-    print('\nGenerating velocity and trajectory time series\n')
+    print('\nGenerating velocity and trajectory time series of the fluid\n')
     # Time series is written in chunks of size n_chunk_max in order to avoid
     # memory overload
     n_chunk_max = 10000
     # Create the H5-file writer
     writer = H5Writer(path / 'flow_data.h5', 'w')
     # Create the velocity data set for the entire time series of length n
-    writer.createDataSet('flow/velocity', (n,3), 'float64')
-    writer.createDataSet('flow/trajectory', (n,3), 'float64')
-    writer.writeDataSet('flow/time', t, 'float64')
+    writer.createDataSet('fluid/velocity', (n,3), 'float64')
+    writer.createDataSet('fluid/trajectory', (n,3), 'float64')
+    writer.writeDataSet('fluid/time', t, 'float64')
     # Initialize with mean flow velocity and write to file
     U_old = np.empty((1,3)) * np.NaN
     U_old[0,0] = Um[0]
     U_old[0,1] = Um[1]
     U_old[0,2] = Um[2]
-    writer.write2DataSet('flow/velocity', U_old, row=0, col=0)
+    writer.write2DataSet('fluid/velocity', U_old, row=0, col=0)
     # Initialize trajectory
     X_old = np.zeros((1,3))
-    writer.write2DataSet('flow/trajectory', X_old, row=0, col=0)
+    writer.write2DataSet('fluid/trajectory', X_old, row=0, col=0)
     kk = 1
     while (kk < n):
         # Define the actual chunk size
@@ -286,8 +285,8 @@ def SBG_auto_corr(path, flow_properties, reproducible, progress):
             X[ii,1] = X[ii-1,1] + (U[ii,1]+U[ii-1,1])/2.0*dt;
             X[ii,2] = X[ii-1,2] + (U[ii,2]+U[ii-1,2])/2.0*dt;
         # Write chunk to .h5 file
-        writer.write2DataSet('flow/velocity', U, row=kk, col=0)
-        writer.write2DataSet('flow/trajectory', X, row=kk, col=0)
+        writer.write2DataSet('fluid/velocity', U, row=kk, col=0)
+        writer.write2DataSet('fluid/trajectory', X, row=kk, col=0)
         # Save last velocity and trajectory
         U_old[0,:] = U[-1,:]
         X_old[0,:] = X[-1,:]
@@ -296,25 +295,102 @@ def SBG_auto_corr(path, flow_properties, reproducible, progress):
         # Display progress
         if progress:
             printProgressBar(kk, n, prefix = 'Progress:', suffix = 'Complete', length = 50)
-    ds_vel = writer.getDataSet('flow/velocity')
+    ds_vel = writer.getDataSet('fluid/velocity')
     ds_vel.attrs['labels'] = ['Ux','Uy','Uz']
-    ds_traj = writer.getDataSet('flow/trajectory')
+    ds_traj = writer.getDataSet('fluid/trajectory')
     ds_traj.attrs['labels'] = ['x','y','z']
-    writer.write2DataSet('flow/trajectory', X, row=kk, col=0)
+    writer.write2DataSet('fluid/trajectory', X, row=kk, col=0)
     flow_props = str(flow_properties)
     writer.writeStringDataSet('.flow_properties', flow_props)
     writer.close()
     time2 = time.time()
-    print(f'Successfully written velocity time series and trajectory')
+    print(f'Successfully written fluid velocity time series and trajectory')
     print(f'Finished in {time2-time1} seconds\n')
 
-def SBG_interp_trajectory(t_traj, X, t):
+def SBG_particle_velocity(path, flow_properties, progress):
+    """SBG including correlation between u' and v' as well as autocorrelation
+    in u(t) depending on integral time scale.
+
+        Parameters
+        ----------
+        path      (pathlib.Path): The directory
+        flow_properties   (dict): A dictionary containing the flow properties
+        progress          (bool): A flag to print the progress
+
+        Returns
+        ----------
+        -
+    """
+    time1 = time.time()
+
+    # Create a H5-file reader
+    reader = H5Reader(path / 'flow_data.h5')
+    # Read the time vector
+    t_f = reader.getDataSet('fluid/time')[:]
+    # Read the fluid velocity
+    u_f = reader.getDataSet('fluid/velocity')[:]
+    reader.close()
+
+    print('\nGenerating velocity and trajectory time series of the particles\n')
+
+    # Initialize velocity time series of the particle
+    u_p = np.zeros((len(u_f),3)) * np.nan
+
+    # Set initial conditions: u_p(t=0) = u_f(t=0) 
+    u_p[0,:] = u_f[0,:]
+
+    # Solve momentum equation for particle velocity with a first order Euler
+    # scheme. The forces acting on the particle are given by Eq. 5 in 
+    # Balachandar, S., & Eaton, J. K. (2010). Turbulent dispersed multiphase
+    # flow. Annual review of fluid mechanics, 42, 111-133.
+    # https://doi.org/10.1146/annurev.fluid.010908.165243
+    # Some parameters
+    C_M = 0.5                   # virtual mass coefficient (Rushe, 2002)
+    rho_f = 1000.0              # density of the fluid [kg/m3]
+    rho_p = 1.0                 # density of the particle [kg/m3]
+    mu_f = 0.001                # dyn. viscosity of the fluid [Pa*s]
+    piTimes3 = 3.0 * math.pi    # 3 * Pi
+    d = get_mean_bubble_sve_size(flow_properties)
+    for ii in range(1, len(t_f)):
+        dt = t_f[ii] - t_f[ii-1]            # Integration time step
+        u_r = u_f[ii-1,:] - u_p[ii-1,:]     # Rel. velocity of prev. timestep
+        Re = rho_p*abs(u_r)*d/mu_f               # Particle Reynolds number
+
+        phi = 1.0 + 0.15*(Re**0.687)          # Drag coefficient * Re / 24
+        du_dt = 1.0/dt * (u_f[ii,:]
+                        -u_f[ii-1,:])      # Time derivative of fluid velocity
+        u_p[ii,:] = u_p[ii-1,:] + dt/(rho_p + C_M*rho_f) * ( \
+                            # Drag force
+                            piTimes3 * mu_f * d * u_r * phi \
+                            # Acceleration force of fluid
+                            + rho_f * du_dt \
+                            # Added mass force
+                            + (C_M*rho_f) * du_dt \
+                        )
+    # Create the H5-file writer
+    writer = H5Writer(path / 'flow_data.h5', 'a')
+    # Write the time vector
+    writer.writeDataSet('particle/time', t_f, 'float64')
+    # Write the velocity time series
+    writer.writeDataSet('particle/velocity', u_p, 'float64')
+    writer.close()
+    time2 = time.time()
+    print(f'Successfully written particel velocity time series and trajectory')
+    print(f'Finished in {time2-time1} seconds\n')
+
+def SBG_interp_trajectory(
+    t_traj,
+    X,
+    t):
     idx = bisect.bisect_right(t_traj, t)
     m = (X[idx] - X[idx-1]) / (t_traj[idx] - t_traj[idx-1])
     Xinterp = X[idx] + m*(t - t_traj[idx])
     return Xinterp
 
-def SBG_get_Signal_traj(t_traj, X, t_probe):
+def SBG_get_Signal_traj(
+    t_traj,
+    X,
+    t_probe):
     t_probe_unique = np.unique(np.hstack((t_traj, t_probe[t_probe<=max(t_traj)])))
     t_traj_del = t_traj[np.invert(np.isin(t_traj, t_probe))]
     Xinterp = pd.DataFrame(X, index=t_traj, columns=['x','y','z'])
@@ -353,9 +429,9 @@ def SBG_signal(
     # Create a H5-file reader
     reader = H5Reader(path / 'flow_data.h5')
     # Read the time vector
-    t_traj = reader.getDataSet('flow/time')[:]
+    t_traj = reader.getDataSet('fluid/time')[:]
     # Read the trajectory
-    X = reader.getDataSet('flow/trajectory')[:]
+    X = reader.getDataSet('fluid/trajectory')[:]
     reader.close()
     # Duration of the time series
     duration = t_traj[-1] - t_traj[0]
