@@ -40,6 +40,142 @@ def SBG_dt_corr(Uprev, Um, sigma, Ti, dt, R):
     U = Um + unew;
     return U
 
+def get_bubble_size(flow_properties):
+    # Define some variables for easier use
+    Um = np.asarray(flow_properties['mean_velocity'])
+    C = flow_properties['void_fraction']
+    tau = flow_properties['duration'];
+    # Get bubble properties
+    bubbles = flow_properties['bubbles']
+    if bubbles['shape'] == 'sphere':
+        if bubbles['size_distribution'] == 'constant':
+            # Mean bubble frequency
+            F = 1.5 * C * np.linalg.norm(Um) / (bubbles['diameter'])
+            # Number of simulated bubbles
+            nb = round(F * tau)
+            # Vector with bubble size (A,B,C), V = 1/6*Pi*A*B*C
+            b_size = np.ones((nb,3))*bubbles['diameter']
+        elif bubbles['size_distribution'] == 'lognormal':
+            # Mean bubble frequency
+            F = 1.5 * C * np.linalg.norm(Um)  \
+                / math.exp(bubbles['mean_ln_diameter'])
+            # Number of simulated bubbles
+            nb = round(F * tau)
+            # Sample lognormal distribution
+            D = np.random.lognormal(bubbles['mean_ln_diameter'],
+                                     bubbles['sd_ln_diameter'],
+                                     size=nb)
+            # Vector with bubble size (A,B,C), V = 1/6*Pi*A*B*C
+            b_size = np.array([D,D,D]).T
+    elif bubbles['shape'] == 'ellipsoid':
+        if bubbles['size_distribution'] == 'constant':
+            # The shorter axis (streamwise)
+            A = np.nan
+            # The longer axes (perpendicular to streamwise direction)
+            B = np.nan
+            # The aspect ratio
+            E = np.nan
+            # Sphere-volume-equivalent bubble diameter
+            D = bubbles['diameter']
+            if bubbles['aspect_ratio_type'] == 'constant':
+                E = bubbles['aspect_ratio_value']
+            elif bubbles['aspect_ratio_type'] == 'Aoyama':
+                # Bubble Reynolds number
+                Re = (1000 * bubbles['slip_velocity_ratio'] \
+                    * np.linalg.norm(Um) * D) / (10**(-3))
+                # Bubble Eotvos number
+                Eo = (999 * 9.81 * D**2) / 0.07
+                # The aspect ratio (Aoyama et al. 2016)
+                E = 1.0/(1.0 + (0.016 * Eo**1.12 * Re))**0.388
+            elif bubbles['aspect_ratio_type'] == 'Vakhrushev':
+                # Bubble Reynolds number
+                Re = (1000 * bubbles['slip_velocity_ratio'] \
+                    * np.linalg.norm(Um) * D) / (10**(-3))
+                # Morton number
+                Mo = (9.81*999*(0.001**4)) / ((1000**2)*(0.07**3))
+                # Tadaki number
+                Ta = Re*Mo**0.23
+                # The aspect ratio (Vakhrushev & Efremov 1970)
+                if (Ta < 1.0):
+                    E = 1.0
+                elif (Ta >= 1.0) & (Ta <= 39.0):
+                    E = (0.81 + 0.206*math.tanh(2.0*0.8-math.log10(Ta)))**3
+                elif (Ta >= 39.8):
+                    E  = 0.24
+            B = (D**3 / E)**(1.0/3.0)
+            A = E * B
+            # Mean bubble frequency
+            F = 1.5 * C * np.linalg.norm(Um) / A
+            # Number of bubbles
+            nb = round(F * tau)
+            A = np.ones(nb)*A
+            B = np.ones(nb)*B
+            # Vector with bubble size (A,B,B), V = 1/6*Pi*A*B*B
+            b_size = np.array([A,B,B]).T
+        elif bubbles['size_distribution'] == 'lognormal':
+            # Mean bubble frequency
+            F = 1.5 * C * np.linalg.norm(Um) \
+                / math.exp(bubbles['mean_ln_diameter'])
+            # Number of simulated bubbles
+            nb = round(F*tau)
+            # Sphere-volume-equivalent bubble diameter
+            D = np.random.lognormal(bubbles['mean_ln_diameter'],
+                                     bubbles['sd_ln_diameter'],
+                                     size=nb)
+            if bubbles['aspect_ratio_type'] == 'constant':
+                E = bubbles['aspect_ratio_value']
+                B = (D**3 / E)**(1.0/3.0)
+                A = E * B
+                b_size = np.array([A,B,B]).T
+            elif bubbles['aspect_ratio_type'] == 'Aoyama':
+                # Loop over sphere-volume-equivalent bubble diameters
+                A = np.ones((nb))*np.nan
+                B = np.ones((nb))*np.nan
+                for ii,d in enumerate(D):
+                    # Bubble Reynolds number
+                    Re = (1000 * bubbles['slip_velocity_ratio'] \
+                        * np.linalg.norm(Um) * d) / (10**(-3))
+                    # Bubble Eotvos number
+                    Eo = (999 * 9.81 * d**2) / 0.07
+                    # The aspect ratio (Aoyama et al. 2016)
+                    E = 1.0/(1.0 + (0.016 * Eo**1.12 * Re))**0.388
+                    B[ii] = (d**3 / E)**(1.0/3.0)
+                    A[ii] = E * B[ii]
+                b_size = np.array([A,B,B]).T
+            elif bubbles['aspect_ratio_type'] == 'Vakhrushev':
+                # Loop over sphere-volume-equivalent bubble diameters
+                A = np.ones((nb))*np.nan
+                B = np.ones((nb))*np.nan
+                for ii,d in enumerate(D):
+                    # Bubble Reynolds number
+                    Re = (1000 * bubbles['slip_velocity_ratio'] \
+                        * np.linalg.norm(Um) * d) / (10**(-3))
+                    # Morton number
+                    Mo = (9.81*999*(0.001**4)) / ((1000**2)*(0.07**3))
+                    # Tadaki number
+                    Ta = Re*Mo**0.23
+                    # The aspect ratio (Vakhrushev & Efremov 1970)
+                    if (Ta < 1.0):
+                        E = 1.0
+                    elif (Ta >= 1.0) & (Ta <= 39.0):
+                        E = (0.81 + 0.206*math.tanh(2.0*0.8-math.log10(Ta)))**3
+                    elif (Ta >= 39.8):
+                        E  = 0.24
+                    B[ii] = (d**3 / E)**(1.0/3.0)
+                    A[ii] = E * B[ii]
+                b_size = np.array([A,B,B]).T
+    return nb, F, b_size
+
+def get_mean_bubble_sve_size(flow_properties):
+    # Returns mean sphere-volume-equivalent bubble size D_sve
+
+    # Get bubble properties
+    bubbles = flow_properties['bubbles']
+    if bubbles['size_distribution'] == 'constant':
+        D_sve = bubbles['diameter']
+    elif bubbles['size_distribution'] == 'lognormal':
+        D_sve = math.exp(bubbles['mean_ln_diameter'])
+    return D_sve
 
 def SBG_auto_corr(path, flow_properties, reproducible, progress):
     """SBG including correlation between u' and v' as well as autocorrelation
@@ -230,125 +366,9 @@ def SBG_signal(
     Um = np.asarray(flow_properties['mean_velocity'])
     C = flow_properties['void_fraction']
 
-    # Get bubble properties
-    bubbles = flow_properties['bubbles']
-    if bubbles['shape'] == 'sphere':
-        if bubbles['size_distribution'] == 'constant':
-            # Mean bubble frequency
-            F = 1.5 * C * np.linalg.norm(Um) / (bubbles['diameter'])
-            # Number of simulated bubbles
-            nb = round(F * duration)
-            # Vector with bubble size (A,B,C), V = 1/6*Pi*A*B*C
-            b_size = np.ones((nb,3))*bubbles['diameter']
-        elif bubbles['size_distribution'] == 'lognormal':
-            # Mean bubble frequency
-            F = 1.5 * C * np.linalg.norm(Um)  \
-                / math.exp(bubbles['mean_ln_diameter'])
-            # Number of simulated bubbles
-            nb = round(F * duration)
-            # Sample lognormal distribution
-            D = np.random.lognormal(bubbles['mean_ln_diameter'],
-                                     bubbles['sd_ln_diameter'],
-                                     size=nb)
-            # Vector with bubble size (A,B,C), V = 1/6*Pi*A*B*C
-            b_size = np.array([D,D,D]).T
-    elif bubbles['shape'] == 'ellipsoid':
-        if bubbles['size_distribution'] == 'constant':
-            # The shorter axis (streamwise)
-            A = np.nan
-            # The longer axes (perpendicular to streamwise direction)
-            B = np.nan
-            # The aspect ratio
-            E = np.nan
-            # Sphere-volume-equivalent bubble diameter
-            D = bubbles['diameter']
-            if bubbles['aspect_ratio_type'] == 'constant':
-                E = bubbles['aspect_ratio_value']
-            elif bubbles['aspect_ratio_type'] == 'Aoyama':
-                # Bubble Reynolds number
-                Re = (1000 * bubbles['slip_velocity_ratio'] \
-                    * np.linalg.norm(Um) * D) / (10**(-3))
-                # Bubble Eotvos number
-                Eo = (999 * 9.81 * D**2) / 0.07
-                # The aspect ratio (Aoyama et al. 2016)
-                E = 1.0/(1.0 + (0.016 * Eo**1.12 * Re))**0.388
-            elif bubbles['aspect_ratio_type'] == 'Vakhrushev':
-                # Bubble Reynolds number
-                Re = (1000 * bubbles['slip_velocity_ratio'] \
-                    * np.linalg.norm(Um) * D) / (10**(-3))
-                # Morton number
-                Mo = (9.81*999*(0.001**4)) / ((1000**2)*(0.07**3))
-                # Tadaki number
-                Ta = Re*Mo**0.23
-                # The aspect ratio (Vakhrushev & Efremov 1970)
-                if (Ta < 1.0):
-                    E = 1.0
-                elif (Ta >= 1.0) & (Ta <= 39.0):
-                    E = (0.81 + 0.206*math.tanh(2.0*0.8-math.log10(Ta)))**3
-                elif (Ta >= 39.8):
-                    E  = 0.24
-            B = (D**3 / E)**(1.0/3.0)
-            A = E * B
-            # Mean bubble frequency
-            F = 1.5 * C * np.linalg.norm(Um) / A
-            # Number of bubbles
-            nb = round(F * duration)
-            A = np.ones(nb)*A
-            B = np.ones(nb)*B
-            # Vector with bubble size (A,B,B), V = 1/6*Pi*A*B*B
-            b_size = np.array([A,B,B]).T
-        elif bubbles['size_distribution'] == 'lognormal':
-            # Mean bubble frequency
-            F = 1.5 * C * np.linalg.norm(Um) \
-                / math.exp(bubbles['mean_ln_diameter'])
-            # Number of simulated bubbles
-            nb = round(F*duration)
-            # Sphere-volume-equivalent bubble diameter
-            D = np.random.lognormal(bubbles['mean_ln_diameter'],
-                                     bubbles['sd_ln_diameter'],
-                                     size=nb)
-            if bubbles['aspect_ratio_type'] == 'constant':
-                E = bubbles['aspect_ratio_value']
-                B = (D**3 / E)**(1.0/3.0)
-                A = E * B
-                b_size = np.array([A,B,B]).T
-            elif bubbles['aspect_ratio_type'] == 'Aoyama':
-                # Loop over sphere-volume-equivalent bubble diameters
-                A = np.ones((nb))*np.nan
-                B = np.ones((nb))*np.nan
-                for ii,d in enumerate(D):
-                    # Bubble Reynolds number
-                    Re = (1000 * bubbles['slip_velocity_ratio'] \
-                        * np.linalg.norm(Um) * d) / (10**(-3))
-                    # Bubble Eotvos number
-                    Eo = (999 * 9.81 * d**2) / 0.07
-                    # The aspect ratio (Aoyama et al. 2016)
-                    E = 1.0/(1.0 + (0.016 * Eo**1.12 * Re))**0.388
-                    B[ii] = (d**3 / E)**(1.0/3.0)
-                    A[ii] = E * B[ii]
-                b_size = np.array([A,B,B]).T
-            elif bubbles['aspect_ratio_type'] == 'Vakhrushev':
-                # Loop over sphere-volume-equivalent bubble diameters
-                A = np.ones((nb))*np.nan
-                B = np.ones((nb))*np.nan
-                for ii,d in enumerate(D):
-                    # Bubble Reynolds number
-                    Re = (1000 * bubbles['slip_velocity_ratio'] \
-                        * np.linalg.norm(Um) * d) / (10**(-3))
-                    # Morton number
-                    Mo = (9.81*999*(0.001**4)) / ((1000**2)*(0.07**3))
-                    # Tadaki number
-                    Ta = Re*Mo**0.23
-                    # The aspect ratio (Vakhrushev & Efremov 1970)
-                    if (Ta < 1.0):
-                        E = 1.0
-                    elif (Ta >= 1.0) & (Ta <= 39.0):
-                        E = (0.81 + 0.206*math.tanh(2.0*0.8-math.log10(Ta)))**3
-                    elif (Ta >= 39.8):
-                        E  = 0.24
-                    B[ii] = (d**3 / E)**(1.0/3.0)
-                    A[ii] = E * B[ii]
-                b_size = np.array([A,B,B]).T
+    # Get number of bubbles, bubble frequency and array with bubble size
+    nb, F, b_size = get_bubble_size(flow_properties)
+
     # Inter-arrival time (time between two particles)
     # ASSUMPTION: equally spaced (in time) bubble distribution
     # iat = 1.0/F - db/np.linalg.norm(Um)
