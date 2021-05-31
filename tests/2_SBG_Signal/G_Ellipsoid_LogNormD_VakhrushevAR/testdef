@@ -6,7 +6,7 @@
   [
     {
       "file": "flow_data.h5",
-      "dataset" : "flow/velocity",
+      "dataset" : "fluid/velocity",
       "tag": "compare velocity time series",
       "rel": 1e-6,
       "abs": 1e-6

@@ -6,14 +6,14 @@
   [
     {
       "file": "flow_data.h5",
-      "dataset" : "flow/velocity",
+      "dataset" : "fluid/velocity",
       "tag": "compare velocity time series",
       "rel": 1e-6,
       "abs": 1e-6
     },
     {
       "file": "flow_data.h5",
-      "dataset" : "flow/trajectory",
+      "dataset" : "fluid/trajectory",
       "tag": "compare trajectory time series",
       "rel": 1e-6,
       "abs": 1e-6
