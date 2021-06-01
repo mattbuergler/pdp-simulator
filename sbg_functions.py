@@ -333,12 +333,13 @@ def SBG_particle_velocity(path, flow_properties, progress):
 
     print('\nGenerating velocity and trajectory time series of the particles\n')
 
-    # Initialize velocity time series of the particle
-    u_p = np.zeros((len(u_f),3)) * np.nan
+    # Initialize velocity time series and trajectory of the particle
+    u_p = np.empty((len(u_f),3)) * np.nan
+    x_p = np.empty((len(u_f),3)) * np.NaN
 
     # Set initial conditions: u_p(t=0) = u_f(t=0) 
     u_p[0,:] = u_f[0,:]
-
+    x_p[0,:] = 0.0
     # Solve momentum equation for particle velocity with a first order Euler
     # scheme. The forces acting on the particle are given by Eq. 5 in 
     # Balachandar, S., & Eaton, J. K. (2010). Turbulent dispersed multiphase
@@ -350,6 +351,7 @@ def SBG_particle_velocity(path, flow_properties, progress):
     rho_p = 1.0                 # density of the particle [kg/m3]
     mu_f = 0.001                # dyn. viscosity of the fluid [Pa*s]
     piTimes3 = 3.0 * math.pi    # 3 * Pi
+    # get the mean sphere-volume-equivalent particle diameter
     d = get_mean_bubble_sve_size(flow_properties)
     for ii in range(1, len(t_f)):
         dt = t_f[ii] - t_f[ii-1]            # Integration time step
@@ -367,12 +369,17 @@ def SBG_particle_velocity(path, flow_properties, progress):
                             # Added mass force
                             + (C_M*rho_f) * du_dt \
                         )
+        # Calculate trajectory
+        x_p[ii,:] = x_p[ii-1,:] + (u_p[ii,:]+u_p[ii-1,:])/2.0*dt;
+
     # Create the H5-file writer
     writer = H5Writer(path / 'flow_data.h5', 'a')
     # Write the time vector
     writer.writeDataSet('particle/time', t_f, 'float64')
     # Write the velocity time series
     writer.writeDataSet('particle/velocity', u_p, 'float64')
+    # Write the trajectory
+    writer.writeDataSet('particle/trajectory', x_p, 'float64')
     writer.close()
     time2 = time.time()
     print(f'Successfully written particel velocity time series and trajectory')

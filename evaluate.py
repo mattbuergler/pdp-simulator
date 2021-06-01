@@ -54,9 +54,9 @@ def main():
     # Create a H5-file reader
     reader = H5Reader(path / 'flow_data.h5')
     # Read the velocity time series
-    vel = reader.getDataSet('flow/velocity')[:]
+    vel = reader.getDataSet('fluid/velocity')[:]
     # Read the time vector
-    t_vel = reader.getDataSet('flow/time')[:]
+    t_vel = reader.getDataSet('fluid/time')[:]
     # Read the bubble size
     b_size = reader.getDataSet('bubbles/size')[:]
     # Read the time vector
@@ -65,9 +65,9 @@ def main():
     # Create a H5-file reader
     reader = H5Reader(path / 'reconstructed.h5')
     # Read the reconstructed velocity time series
-    vel_rec = reader.getDataSet('flow/velocity')[:]
+    vel_rec = reader.getDataSet('fluid/velocity')[:]
     # Read the reconstructed time vector
-    t_vel_rec = reader.getDataSet('flow/interaction_times')[:]
+    t_vel_rec = reader.getDataSet('fluid/interaction_times')[:]
     # Read the bubble sizecd t
     b_size_rec = reader.getDataSet('bubbles/diameters')[:]
     t_b_size_rec = reader.getDataSet('bubbles/interaction_times')[:]
