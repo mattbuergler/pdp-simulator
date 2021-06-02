@@ -307,9 +307,8 @@ def SBG_fluid_velocity(path, flow_properties, reproducible, progress):
     print(f'Successfully written fluid velocity time series and trajectory')
     print(f'Finished in {time2-time1} seconds\n')
 
-def SBG_particle_velocity(path, flow_properties, progress):
-    """SBG including correlation between u' and v' as well as autocorrelation
-    in u(t) depending on integral time scale.
+def SBG_bubble_velocity(path, flow_properties, progress):
+    """Calculate the bubble velocity based on a force balance equation between drag and virtual mass acting on the bubble by the fluid.
 
         Parameters
         ----------
@@ -331,43 +330,43 @@ def SBG_particle_velocity(path, flow_properties, progress):
     u_f = reader.getDataSet('fluid/velocity')[:]
     reader.close()
 
-    print('\nGenerating velocity and trajectory time series of the particles\n')
+    print('\nGenerating velocity and trajectory time series of the bubbles\n')
 
-    # Initialize velocity time series and trajectory of the particle
+    # Initialize velocity time series and trajectory of the bubble
     u_p = np.empty((len(u_f),3)) * np.nan
     x_p = np.empty((len(u_f),3)) * np.NaN
 
     # Set initial conditions: u_p(t=0) = u_f(t=0) 
     u_p[0,:] = u_f[0,:]
     x_p[0,:] = 0.0
-    # Solve momentum equation for particle velocity with a first order Euler
-    # scheme. The forces acting on the particle are given by Eq. 5 in 
+    # Solve momentum equation for bubble velocity with a first order Euler
+    # scheme. The forces acting on the bubble are given by Eq. 5 in 
     # Balachandar, S., & Eaton, J. K. (2010). Turbulent dispersed multiphase
     # flow. Annual review of fluid mechanics, 42, 111-133.
     # https://doi.org/10.1146/annurev.fluid.010908.165243
     # Some parameters
     C_M = 0.5                   # virtual mass coefficient (Rushe, 2002)
     rho_f = 1000.0              # density of the fluid [kg/m3]
-    rho_p = 1.0                 # density of the particle [kg/m3]
+    rho_p = 1.0                 # density of the bubble [kg/m3]
     mu_f = 0.001                # dyn. viscosity of the fluid [Pa*s]
     piTimes3 = 3.0 * math.pi    # 3 * Pi
-    # get the mean sphere-volume-equivalent particle diameter
+    # get the mean sphere-volume-equivalent bubble diameter
     d = get_mean_bubble_sve_size(flow_properties)
+    V_p = math.pi/6.0*d**3.     # sphere volume
     for ii in range(1, len(t_f)):
         dt = t_f[ii] - t_f[ii-1]            # Integration time step
         u_r = u_f[ii-1,:] - u_p[ii-1,:]     # Rel. velocity of prev. timestep
-        Re = rho_p*abs(u_r)*d/mu_f               # Particle Reynolds number
-
-        phi = 1.0 + 0.15*(Re**0.687)          # Drag coefficient * Re / 24
+        Re = rho_p*abs(u_r)*d/mu_f          # Bubble Reynolds number
+        phi = 1.0 + 0.15*(Re**0.687)        # Drag coefficient * Re / 24
         du_dt = 1.0/dt * (u_f[ii,:]
-                        -u_f[ii-1,:])      # Time derivative of fluid velocity
-        u_p[ii,:] = u_p[ii-1,:] + dt/(rho_p + C_M*rho_f) * ( \
+                        -u_f[ii-1,:])       # Time derivative of fluid velocity
+        u_p[ii,:] = u_p[ii-1,:] + dt/(V_p*(rho_p + C_M*rho_f)) * ( \
                             # Drag force
                             piTimes3 * mu_f * d * u_r * phi \
-                            # Acceleration force of fluid
-                            + rho_f * du_dt \
-                            # Added mass force
-                            + (C_M*rho_f) * du_dt \
+        #                     # Acceleration force of fluid
+        #                     + rho_f * du_dt \
+        #                     # Added mass force
+        #                     + (C_M*rho_f) * du_dt \
                         )
         # Calculate trajectory
         x_p[ii,:] = x_p[ii-1,:] + (u_p[ii,:]+u_p[ii-1,:])/2.0*dt;
@@ -375,14 +374,14 @@ def SBG_particle_velocity(path, flow_properties, progress):
     # Create the H5-file writer
     writer = H5Writer(path / 'flow_data.h5', 'a')
     # Write the time vector
-    writer.writeDataSet('particle/time', t_f, 'float64')
+    writer.writeDataSet('bubbles/time', t_f, 'float64')
     # Write the velocity time series
-    writer.writeDataSet('particle/velocity', u_p, 'float64')
+    writer.writeDataSet('bubbles/velocity', u_p, 'float64')
     # Write the trajectory
-    writer.writeDataSet('particle/trajectory', x_p, 'float64')
+    writer.writeDataSet('bubbles/trajectory', x_p, 'float64')
     writer.close()
     time2 = time.time()
-    print(f'Successfully written particel velocity time series and trajectory')
+    print(f'Successfully written bubble velocity time series and trajectory')
     print(f'Finished in {time2-time1} seconds\n')
 
 def SBG_interp_trajectory(
@@ -436,9 +435,9 @@ def SBG_signal(
     # Create a H5-file reader
     reader = H5Reader(path / 'flow_data.h5')
     # Read the time vector
-    t_traj = reader.getDataSet('fluid/time')[:]
+    t_traj = reader.getDataSet('bubbles/time')[:]
     # Read the trajectory
-    X = reader.getDataSet('fluid/trajectory')[:]
+    X = reader.getDataSet('bubbles/trajectory')[:]
     reader.close()
     # Duration of the time series
     duration = t_traj[-1] - t_traj[0]
@@ -452,7 +451,7 @@ def SBG_signal(
     # Get number of bubbles, bubble frequency and array with bubble size
     nb, F, b_size = get_bubble_size(flow_properties)
 
-    # Inter-arrival time (time between two particles)
+    # Inter-arrival time (time between two bubbles)
     # ASSUMPTION: equally spaced (in time) bubble distribution
     # iat = 1.0/F - db/np.linalg.norm(Um)
     iat = np.ones(nb)*1.0/F

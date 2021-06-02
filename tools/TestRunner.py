@@ -37,7 +37,7 @@ class TestRunner:
     timings = []  # type: typing.List[float]
 
     def __init__(self, config):
-        self.visualize = config['visualize']
+        self.velocity_tsa = config['velocity_tsa']
         self.tests = []  # type: typing.List[str]
 
 
@@ -243,8 +243,8 @@ class TestRunner:
             "python",
             str(MAINPATH / "sbg.py")
         ]
-        if self.visualize:
-            cmd.append("-v")
+        if self.velocity_tsa:
+            cmd.append("-tsa")
         cmd.append("-r")
         cmd.append(testDef['SBG'])
         cmd.append('.')
@@ -287,6 +287,23 @@ class TestRunner:
         ]
         return self.runCommon(cmd, testDirectory, "a")
 
+    def runTSA(self, testDirectory: pathlib.Path):
+        """
+        run given simulation in given directory
+        """
+        PRINTTITLE(" running evalutation in %s " % str(testDirectory), "-")
+        # get the filename of the runfile
+        runfile = testDirectory / "run" / "config.json"
+        # check for runfile
+        if not runfile.exists():
+            PRINTERRORANDEXIT("runfile <" + str(runfile) + "> does not exists")
+        # create simulation call
+        cmd = [
+            "python",
+            str(MAINPATH / "velcoity_tsa.py"),
+            '.'
+        ]
+        return self.runCommon(cmd, testDirectory, "a")
 
     def runCommon(
         self, cmd: typing.List[str], testDirectory: pathlib.Path, fileAccess="w"

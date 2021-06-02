@@ -385,20 +385,19 @@ def main():
     # Create the H5-file writer
     writer = H5Writer(path / 'reconstructed.h5', 'w')
     # Create the velocity data set
-    writer.writeDataSet('flow/velocity', velocity_reconst, 'float64')
-    writer.writeDataSet('flow/interaction_times', time_reconst, 'float64')
-    ds_vel = writer.getDataSet('flow/velocity')
+    writer.writeDataSet('bubbles/velocity', velocity_reconst, 'float64')
+    writer.writeDataSet('bubbles/interaction_times', time_reconst, 'float64')
+    ds_vel = writer.getDataSet('bubbles/velocity')
     # Add the attributes
     ds_vel.attrs['labels'] = ['Ux','Uy','Uz']
     # Create the dataset for the bubble diameter
     writer.writeDataSet('bubbles/diameters', bubble_diam_reconst, 'float64')
-    writer.writeDataSet('bubbles/interaction_times', time_reconst, 'float64')
     ds_d = writer.getDataSet('bubbles/diameters')
     # Add the attributes
     ds_d.attrs['labels'] = ['D_h_2h', 'D_h_2hp1']
     # Create the IAC and void_fraction datasets
-    writer.writeDataSet('flow/IAC', np.array([iac]), 'float64')
-    writer.writeDataSet('flow/voidFraction', np.array([np.mean(signal)]), 'float64')
+    writer.writeDataSet('IAC', np.array([iac]), 'float64')
+    writer.writeDataSet('voidFraction', np.array([np.mean(signal)]), 'float64')
     writer.close()
     time2 = time.time()
     print(f'Successfully run the reconstruction algorithm')

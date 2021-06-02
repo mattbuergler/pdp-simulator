@@ -53,10 +53,10 @@ def main():
     # Parse velocity time series
     # Create a H5-file reader
     reader = H5Reader(path / 'flow_data.h5')
-    # Read the velocity time series
-    vel = reader.getDataSet('fluid/velocity')[:]
+    # Read the 'true' velocity time series
+    vel_true = reader.getDataSet('bubbles/velocity')[:]
     # Read the time vector
-    t_vel = reader.getDataSet('fluid/time')[:]
+    t_true = reader.getDataSet('bubbles/time')[:]
     # Read the bubble size
     b_size = reader.getDataSet('bubbles/size')[:]
     # Read the time vector
@@ -65,38 +65,37 @@ def main():
     # Create a H5-file reader
     reader = H5Reader(path / 'reconstructed.h5')
     # Read the reconstructed velocity time series
-    vel_rec = reader.getDataSet('fluid/velocity')[:]
-    # Read the reconstructed time vector
-    t_vel_rec = reader.getDataSet('fluid/interaction_times')[:]
+    vel_rec = reader.getDataSet('bubbles/velocity')[:]
+    # Read the reconstructed time bubbles
+    t_rec = reader.getDataSet('bubbles/interaction_times')[:]
     # Read the bubble sizecd t
     b_size_rec = reader.getDataSet('bubbles/diameters')[:]
-    t_b_size_rec = reader.getDataSet('bubbles/interaction_times')[:]
     reader.close()
 
     # Convert to pandas array
     RMSD_vel_reco = np.empty((len(vel_rec),3))
     RMSD_vel_true = np.empty((len(vel_rec),3))
-    for ii in range(0,len(t_vel_rec)):
+    for ii in range(0,len(t_rec)):
         # Get the range of the velocity timeseries that encloses the timeframe
         # of bubble-probe interaction (tfbpi)
-        id_t_min = max(bisect.bisect_right(t_vel, t_vel_rec[ii,0])-1, 0)
-        id_t_max = min(bisect.bisect_left(t_vel, t_vel_rec[ii,1]),len(t_vel))
+        id_t_min = max(bisect.bisect_right(t_true, t_rec[ii,0])-1, 0)
+        id_t_max = min(bisect.bisect_left(t_true, t_rec[ii,1]),len(t_true))
         # Mean of the velocity time series in the tfbpi
-        mean_vel = np.mean(vel[id_t_min:(id_t_max+1),:],axis=0)
+        mean_vel = np.mean(vel_true[id_t_min:(id_t_max+1),:],axis=0)
         # The mean squared deviation (MSD) of the reconstructed and true
         # velocity
-        MSD_vel_rec = np.mean((vel_rec[ii,:]- vel[id_t_min:(id_t_max+1),:])**2,\
-            axis=0)
-        MSD_vel = np.mean((vel[id_t_min:(id_t_max+1),:] \
-                - np.mean(vel[id_t_min:(id_t_max+1),:],axis=0))**2,axis=0)
+        MSD_vel_rec = np.mean((vel_rec[ii,:]
+                -vel_true[id_t_min:(id_t_max+1),:])**2, axis=0)
+        MSD_vel_true = np.mean((vel_true[id_t_min:(id_t_max+1),:] \
+                - np.mean(vel_true[id_t_min:(id_t_max+1),:],axis=0))**2,axis=0)
         # The root of the mean squared deviations (RMSD)
         RMSD_vel_reco[ii,:] = np.sqrt(MSD_vel_rec / (id_t_max-id_t_min))
-        RMSD_vel_true[ii,:] = np.sqrt(MSD_vel / (id_t_max-id_t_min))
+        RMSD_vel_true[ii,:] = np.sqrt(MSD_vel_true / (id_t_max-id_t_min))
 
     # Convert to DataFrames
-    RMSD_vel_reco = pd.DataFrame(RMSD_vel_reco, index=np.mean(t_vel_rec,axis=1),
+    RMSD_vel_reco = pd.DataFrame(RMSD_vel_reco, index=np.mean(t_rec,axis=1),
         columns=['Ux','Uy','Uz'])
-    RMSD_vel_true = pd.DataFrame(RMSD_vel_true, index=np.mean(t_vel_rec,axis=1),
+    RMSD_vel_true = pd.DataFrame(RMSD_vel_true, index=np.mean(t_rec,axis=1),
         columns=['Ux','Uy','Uz'])
 
     # Calculate mean RMSD for the true and reconstructed velocity and their
@@ -113,7 +112,7 @@ def main():
     # Calculate volumen equivalent diameter
     b_size['D'] = (b_size['A']*b_size['B']*b_size['C'])**(1.0/3.0)
     # Convert to pandas array
-    b_size_rec = pd.DataFrame(b_size_rec,index=np.mean(t_b_size_rec,axis=1), \
+    b_size_rec = pd.DataFrame(b_size_rec,index=np.mean(t_rec,axis=1), \
         columns=['D_h_2h', 'D_h_2hp1'])
     b_size_rec['D'] = (b_size_rec['D_h_2h'] + b_size_rec['D_h_2hp1'])/2.0
     # Get timesteps of the reconstructed velocities that are NOT in present in
@@ -130,7 +129,7 @@ def main():
     rel_error_D = error_D / b_size['D'][b_size_rec.index]
 
     # Convert to DataFrame
-    errors_D = pd.DataFrame(error_D.values, index=np.mean(t_vel_rec,axis=1),
+    errors_D = pd.DataFrame(error_D.values, index=np.mean(t_rec,axis=1),
         columns=['E'])
     errors_D['RE'] = rel_error_D
     # Calculate squared error (SE) and squared relative errors (SRE)
@@ -158,7 +157,7 @@ def main():
     # Write number of bubbles
     file1 = open(path / "n_bubbles.txt","w")
     file1.write(f"Input: {len(t_b_size)}\n")
-    file1.write(f"Reconstructed: {len(t_b_size_rec)}\n")
+    file1.write(f"Reconstructed: {len(t_rec)}\n")
     file1.close()
 
     # Plot parameters
@@ -172,25 +171,25 @@ def main():
     color = [0.2,0.2,0.2]
     lw = 0.2
     fig, axs = plt.subplots(3,figsize=(6,4))
-    axs[0].plot(t_vel,vel[:,0],color=color,lw=lw)
-    axs[1].plot(t_vel,vel[:,1],color=color,lw=lw)
-    axs[2].plot(t_vel,vel[:,2],color=color,lw=lw)
-    axs[0].plot(np.mean(t_vel_rec,axis=1), vel_rec[:,0], color='r', \
+    axs[0].plot(t_true,vel_true[:,0],color=color,lw=lw)
+    axs[1].plot(t_true,vel_true[:,1],color=color,lw=lw)
+    axs[2].plot(t_true,vel_true[:,2],color=color,lw=lw)
+    axs[0].plot(np.mean(t_rec,axis=1), vel_rec[:,0], color='r', \
                 lw=0,marker='o')
-    axs[1].plot(np.mean(t_vel_rec,axis=1), vel_rec[:,1], color='r', \
+    axs[1].plot(np.mean(t_rec,axis=1), vel_rec[:,1], color='r', \
                 lw=0,marker='o')
-    axs[2].plot(np.mean(t_vel_rec,axis=1), vel_rec[:,2], color='r', \
+    axs[2].plot(np.mean(t_rec,axis=1), vel_rec[:,2], color='r', \
                 lw=0,marker='o')
     axs[0].set_ylabel('$u_x$ [m/s]')
     axs[1].set_ylabel('$u_y$ [m/s]')
     axs[2].set_ylabel('$u_z$ [m/s]')
     axs[2].set_xlabel('$t$ [s]')
-    lim = [[fp_vel[0] - 1.2*max(abs(vel[:,0]-fp_vel[0])),
-            fp_vel[0] + 1.2*max(abs(vel[:,0]-fp_vel[0]))],
-           [fp_vel[1] - 1.2*max(abs(vel[:,1]-fp_vel[1])),
-            fp_vel[1] + 1.2*max(abs(vel[:,1]-fp_vel[1]))],
-           [fp_vel[2] - 1.2*max(abs(vel[:,2]-fp_vel[2])),
-            fp_vel[2] + 1.2*max(abs(vel[:,2]-fp_vel[2]))]]
+    lim = [[fp_vel[0] - 1.2*max(abs(vel_true[:,0]-fp_vel[0])),
+            fp_vel[0] + 1.2*max(abs(vel_true[:,0]-fp_vel[0]))],
+           [fp_vel[1] - 1.2*max(abs(vel_true[:,1]-fp_vel[1])),
+            fp_vel[1] + 1.2*max(abs(vel_true[:,1]-fp_vel[1]))],
+           [fp_vel[2] - 1.2*max(abs(vel_true[:,2]-fp_vel[2])),
+            fp_vel[2] + 1.2*max(abs(vel_true[:,2]-fp_vel[2]))]]
     axs[0].set_ylim([lim[0][0],lim[0][1]])
     axs[1].set_ylim([lim[1][0],lim[1][1]])
     axs[2].set_ylim([lim[2][0],lim[2][1]])
@@ -202,21 +201,21 @@ def main():
 
     np.random.seed(42)
     n = 9
-    bubbles = np.random.uniform(low=0, high=len(t_vel_rec), size=n)
+    bubbles = np.random.uniform(low=0, high=len(t_rec), size=n)
     delta_t=0.001
     fig, axs = plt.subplots(int(math.sqrt(n)),int(math.sqrt(n)),figsize=(6,6))
     axs=axs.reshape(-1)
     for ii,bubble in enumerate(bubbles):
         bid = int(bubble)
-        axs[ii].plot(t_vel,vel[:,0],color='k',lw=1, label='true velocity')
-        axs[ii].hlines(vel_rec[bid,0],t_vel_rec[bid,0],t_vel_rec[bid,1], \
+        axs[ii].plot(t_true,vel_true[:,0],color='k',lw=1, label='true velocity')
+        axs[ii].hlines(vel_rec[bid,0],t_rec[bid,0],t_rec[bid,1], \
                     color='b',label='reconstr. velocity',zorder=100)
-        axs[ii].set_xlim([t_vel_rec[bid,0]-delta_t,t_vel_rec[bid,1]+delta_t])
-        axs[ii].set_ylim([0.9*min(vel[:,0][(t_vel>t_vel_rec[bid,0]) \
-                                         & (t_vel<t_vel_rec[bid,1])]), \
-                          1.1*max(vel[:,0][(t_vel>t_vel_rec[bid,0]) \
-                                         &(t_vel<t_vel_rec[bid,1])])])
-        axs[ii].axvspan(t_vel_rec[bid,0], t_vel_rec[bid,1], alpha=0.5, \
+        axs[ii].set_xlim([t_rec[bid,0]-delta_t,t_rec[bid,1]+delta_t])
+        axs[ii].set_ylim([0.9*min(vel_true[:,0][(t_true>t_rec[bid,0]) \
+                                         & (t_true<t_rec[bid,1])]), \
+                          1.1*max(vel_true[:,0][(t_true>t_rec[bid,0]) \
+                                         &(t_true<t_rec[bid,1])])])
+        axs[ii].axvspan(t_rec[bid,0], t_rec[bid,1], alpha=0.5, \
                     color='r',label='bubble-probe interaction',zorder=10)
         if (ii == n-int(math.sqrt(n))):
             axs[ii].legend(loc=4,bbox_to_anchor=(4,-0.8),ncol=3)
