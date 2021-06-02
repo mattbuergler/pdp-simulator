@@ -8,10 +8,10 @@ variables:
 
 .run-tests-template: &run-tests-template
   script:
-    - tests/runtests.py \
+    - pipenv shell
+    - python tests/runtests.py \
           -C \
           -r \
-          -b {} \
           tests/[0-9]*
 
 test:
