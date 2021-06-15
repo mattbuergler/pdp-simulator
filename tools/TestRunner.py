@@ -261,9 +261,14 @@ class TestRunner:
         if not runfile.exists():
             PRINTERRORANDEXIT("runfile <" + str(runfile) + "> does not exists")
         # create simulation call
+        # get a velocity estimate
+        config = json.loads((runfile).read_bytes())
+        vel = config["FLOW_PROPERTIES"]["mean_velocity"][0]
         cmd = [
             "python",
             str(MAINPATH / "mssrc.py"),
+            "-vel",
+            str(vel),
             '.'
         ]
         return self.runCommon(cmd, testDirectory, "a")

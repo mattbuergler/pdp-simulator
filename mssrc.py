@@ -33,8 +33,7 @@ except ImportError:
 """
 
 # Define global variables
-COEFF_0 = 0.1   # Eq. (43) in Shen et al. (2005): low limit constant
-V_GAS = 2.0     # Eq. (43) in Shen et al. (2005): estimated gas velocity
+COEFF_0 = 0.3   # Eq. (43) in Shen et al. (2005): low limit constant
 
 def main():
     """
@@ -50,9 +49,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('path', type=str,
         help="The path to the scenario directory.")
+    parser.add_argument('-vel', '--velocity', default=1,
+        help='A rough estimate for the mean velocity.')
     parser.add_argument('-p', '--progress', action='store_true',
         help='Show progress bar.')
     args = parser.parse_args()
+
+    # Eq. (43) in Shen et al. (2005): estimated gas velocity
+    V_GAS = float(args.velocity)
 
     # Create Posix path for OS indepency
     path = pathlib.Path(args.path)
@@ -369,8 +373,11 @@ def main():
 
     print('\nSaving results....\n')
     # Generate a reconstructed velocity time-series from individual
-    # bubble velocities
+    # Initialize bubble velocities, weighted mean velocity and
+    # Reynolds stress tensor
     velocity_reconst = np.empty((len(bubbles_complete),3))
+    weighted_mean_velocity_reconst = np.empty(3)
+    reynolds_stress_reconst = np.empty((len(bubbles_complete),3,3))
     time_reconst = np.empty((len(bubbles_complete),2))
     # Collect bubble properties, such as diameter
     bubble_diam_reconst = np.empty((len(bubbles_complete),2))
@@ -382,11 +389,59 @@ def main():
         time_reconst[ii,0] = np.min(bubble_props['ifd_times'].to_numpy())
         time_reconst[ii,1] = np.max(bubble_props['ifd_times'].to_numpy())
         bubble_diam_reconst[ii,:] = bubble_props['diameter']
+    weighted_mean_velocity_reconst[0] = np.sum(velocity_reconst[:,0] \
+                                    * (time_reconst[:,1]-time_reconst[:,0]),axis=0) \
+                                    / np.sum(time_reconst[:,1]-time_reconst[:,0],axis=0)
+    weighted_mean_velocity_reconst[1] = np.sum(velocity_reconst[:,1] \
+                                    * (time_reconst[:,1]-time_reconst[:,0]),axis=0) \
+                                    / np.sum(time_reconst[:,1]-time_reconst[:,0],axis=0)
+    weighted_mean_velocity_reconst[2] = np.sum(velocity_reconst[:,2] \
+                                    * (time_reconst[:,1]-time_reconst[:,0]),axis=0) \
+                                    / np.sum(time_reconst[:,1]-time_reconst[:,0],axis=0)
+    mean_velocity_reconst = velocity_reconst.mean(axis=0)
+    for ii in range(0,len(velocity_reconst)):
+        velocity_fluctuations = velocity_reconst[ii,:]-mean_velocity_reconst
+        reynolds_stress_reconst[ii,:,:] = np.outer(velocity_fluctuations, \
+                                    velocity_fluctuations)
+    mean_reynolds_stress = reynolds_stress_reconst.mean(axis=0)
+    turbulent_intensity = np.sqrt(np.array([
+            mean_reynolds_stress[0,0], \
+            mean_reynolds_stress[1,1], \
+            mean_reynolds_stress[2,2], \
+            ])) / mean_velocity_reconst[0]
+
+    # Calculate the statistics
+    # Calculate mean velocity
+    mean_velocity_reconst = velocity_reconst.mean(axis=0)
+    # Initialize the reynolds stress tensors time series
+    reynolds_stress = np.empty((len(velocity_reconst),3,3))
+    for ii in range(0,len(velocity_reconst)):
+        # Calculate velocity fluctuations
+        velocity_fluct_reconst = velocity_reconst[ii,:]-mean_velocity_reconst
+        # Reynolds stresses as outer product of fluctuations
+        reynolds_stress[ii,:,:] = np.outer(velocity_fluct_reconst, \
+                                    velocity_fluct_reconst)
+    # Calculate mean Reynolds stresses
+    mean_reynolds_stress = reynolds_stress.mean(axis=0)
+    # Calculate turbulent intensity with regard to mean x-velocity
+    turbulent_intensity = np.sqrt(np.array([
+            mean_reynolds_stress[0,0], \
+            mean_reynolds_stress[1,1], \
+            mean_reynolds_stress[2,2], \
+            ])) /  np.sqrt(mean_velocity_reconst.dot(mean_velocity_reconst))
     # Create the H5-file writer
     writer = H5Writer(path / 'reconstructed.h5', 'w')
     # Create the velocity data set
     writer.writeDataSet('bubbles/velocity', velocity_reconst, 'float64')
     writer.writeDataSet('bubbles/interaction_times', time_reconst, 'float64')
+    writer.writeDataSet('bubbles/mean_velocity', \
+        mean_velocity_reconst, 'float64')
+    writer.writeDataSet('bubbles/weighted_mean_velocity', \
+        weighted_mean_velocity_reconst, 'float64')
+    writer.writeDataSet('bubbles/reynold_stresses', \
+        mean_reynolds_stress, 'float64')
+    writer.writeDataSet('bubbles/turbulent_intensity', \
+        turbulent_intensity, 'float64')
     ds_vel = writer.getDataSet('bubbles/velocity')
     # Add the attributes
     ds_vel.attrs['labels'] = ['Ux','Uy','Uz']

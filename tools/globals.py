@@ -10,6 +10,8 @@ from typing import List
     global variables and functions
 """
 SMALLNUMBER = 1.e-12
+LARGENUMBER= 1.e12
+LARGENEGNUMBER=-1.e12
 
 # printing stuff to stdout
 def PRINTLOG(log, string):

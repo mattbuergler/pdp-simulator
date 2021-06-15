@@ -55,6 +55,12 @@ def main():
     reader = H5Reader(path / 'flow_data.h5')
     # Read the 'true' velocity time series
     vel_true = reader.getDataSet('bubbles/velocity')[:]
+    # Read the mean velocity
+    vel_mean_true = reader.getDataSet('bubbles/mean_velocity')[:]
+    # Read the Reynolds stresses
+    rs_true = reader.getDataSet('bubbles/reynold_stresses')[:]
+    # Read the turbulent intensity
+    Ti_true = reader.getDataSet('bubbles/turbulent_intensity')[:]
     # Read the time vector
     t_true = reader.getDataSet('bubbles/time')[:]
     # Read the bubble size
@@ -66,46 +72,80 @@ def main():
     reader = H5Reader(path / 'reconstructed.h5')
     # Read the reconstructed velocity time series
     vel_rec = reader.getDataSet('bubbles/velocity')[:]
+    # Read the mean velocity and weigthed mean velocity
+    vel_mean_rec = reader.getDataSet('bubbles/mean_velocity')[:]
+    vel_weighted_mean_rec = reader.getDataSet('bubbles/weighted_mean_velocity')[:]
+    # Read the Reynolds stresses
+    rs_rec = reader.getDataSet('bubbles/reynold_stresses')[:]
+    # Read the turbulent intensity
+    Ti_rec = reader.getDataSet('bubbles/turbulent_intensity')[:]
     # Read the reconstructed time bubbles
     t_rec = reader.getDataSet('bubbles/interaction_times')[:]
     # Read the bubble sizecd t
     b_size_rec = reader.getDataSet('bubbles/diameters')[:]
     reader.close()
-
-    # Convert to pandas array
+    # Initialize arrays for errors
     RMSD_vel_reco = np.empty((len(vel_rec),3))
     RMSD_vel_true = np.empty((len(vel_rec),3))
+    E_vel = np.empty((len(vel_rec),3))
+    RE_vel = np.empty((len(vel_rec),3))
+    AE_vel = np.empty((len(vel_rec),3))
+    ARE_vel = np.empty((len(vel_rec),3))
+    # Initialize array for true mean bubble velocity
+    vel_true_bubble = np.empty((len(vel_rec),3))
     for ii in range(0,len(t_rec)):
         # Get the range of the velocity timeseries that encloses the timeframe
         # of bubble-probe interaction (tfbpi)
         id_t_min = max(bisect.bisect_right(t_true, t_rec[ii,0])-1, 0)
         id_t_max = min(bisect.bisect_left(t_true, t_rec[ii,1]),len(t_true))
-        # Mean of the velocity time series in the tfbpi
-        mean_vel = np.mean(vel_true[id_t_min:(id_t_max+1),:],axis=0)
+        # Calculate true mean bubble velocity (mean over tfbpi)
+        vel_true_bubble[ii,:] = np.mean(vel_true[id_t_min:(id_t_max+1),:],axis=0)
         # The mean squared deviation (MSD) of the reconstructed and true
         # velocity
         MSD_vel_rec = np.mean((vel_rec[ii,:]
                 -vel_true[id_t_min:(id_t_max+1),:])**2, axis=0)
         MSD_vel_true = np.mean((vel_true[id_t_min:(id_t_max+1),:] \
-                - np.mean(vel_true[id_t_min:(id_t_max+1),:],axis=0))**2,axis=0)
+                - vel_true_bubble[ii,:])**2,axis=0)
         # The root of the mean squared deviations (RMSD)
         RMSD_vel_reco[ii,:] = np.sqrt(MSD_vel_rec / (id_t_max-id_t_min))
         RMSD_vel_true[ii,:] = np.sqrt(MSD_vel_true / (id_t_max-id_t_min))
+        # Get the absolute error (AE) and the absolute relative error (ARE)
+        E_vel[ii,:] = vel_rec[ii,:] - vel_true_bubble[ii,:]
+        RE_vel[ii,:] = (vel_rec[ii,:] - vel_true_bubble[ii,:]) / vel_true_bubble[ii,:]
+        AE_vel[ii,:] = abs(vel_rec[ii,:] - vel_true_bubble[ii,:])
+        ARE_vel[ii,:] = abs((vel_rec[ii,:] - vel_true_bubble[ii,:]) / vel_true_bubble[ii,:])
 
     # Convert to DataFrames
     RMSD_vel_reco = pd.DataFrame(RMSD_vel_reco, index=np.mean(t_rec,axis=1),
         columns=['Ux','Uy','Uz'])
     RMSD_vel_true = pd.DataFrame(RMSD_vel_true, index=np.mean(t_rec,axis=1),
         columns=['Ux','Uy','Uz'])
+    E_vel = pd.DataFrame(E_vel, index=np.mean(t_rec,axis=1),
+        columns=['Ux','Uy','Uz'])
+    RE_vel = pd.DataFrame(RE_vel, index=np.mean(t_rec,axis=1),
+        columns=['Ux','Uy','Uz'])
+    AE_vel = pd.DataFrame(AE_vel, index=np.mean(t_rec,axis=1),
+        columns=['Ux','Uy','Uz'])
+    ARE_vel = pd.DataFrame(ARE_vel, index=np.mean(t_rec,axis=1),
+        columns=['Ux','Uy','Uz'])
 
-    # Calculate mean RMSD for the true and reconstructed velocity and their
-    # ratio epsilon
+    # Calculate mean RMSD for the true and reconstructed velocity and their    # ratio epsilon
     summary_vel = pd.DataFrame(np.nan, \
             index=['MRMSD_true','MRMSD_rec','mean_epsilon'], \
             columns=['Ux','Uy','Uz'])
     summary_vel.loc['MRMSD_true',:] = RMSD_vel_true.mean()
     summary_vel.loc['MRMSD_rec',:] = RMSD_vel_reco.mean()
     summary_vel.loc['mean_epsilon',:] = ((RMSD_vel_reco/RMSD_vel_true)).mean()
+    summary_vel.loc['ME_rec',:] = E_vel.mean()
+    summary_vel.loc['MRE_rec',:] = RE_vel.mean()
+    summary_vel.loc['MAE_rec',:] = AE_vel.mean()
+    summary_vel.loc['MARE_rec',:] = ARE_vel.mean()
+
+    cumulative_mean_AE = np.empty((len(ARE_vel),3))
+    # Convergence of mean error with number of bubbles
+    for ii in range(0,len(AE_vel)):
+        cumulative_mean_AE[ii,:] = AE_vel.iloc[:ii].mean()
+
 
     # Calculate error for bubble size
     b_size = pd.DataFrame(b_size,index=t_b_size, columns=['A','B','C'])
@@ -138,21 +178,95 @@ def main():
 
     # Calculate mean average error (MAE) and root mean square error (RMSE)
     # for the bubble diameter
-    summary_b_size = pd.DataFrame(np.nan, index=['MAE','RMSE','MARE','RMSRE'],\
+    summary_b_size = pd.DataFrame(np.nan, index=['ME','MRE','MAE','RMSE','MARE','RMSRE'],\
                             columns=['D'])
 
     # Store summary of errors
+    summary_b_size['D']['ME'] = errors_D['E'].mean()
+    summary_b_size['D']['MRE'] = errors_D['RE'].mean()
     summary_b_size['D']['MAE'] = errors_D['E'].abs().mean()
     summary_b_size['D']['MARE'] = errors_D['RE'].abs().mean()
     summary_b_size['D']['RMSE'] = math.sqrt(errors_D['SE'].mean())
     summary_b_size['D']['RMSRE'] = math.sqrt(errors_D['SRE'].abs().mean())
 
+    # Calculate true mean velocity and Reynolds stress tensor based on true
+    # bubble velocity
+    # Calculate mean true bubble velocity
+    mean_vel_true_bubble = vel_true_bubble.mean(axis=0)
+    # Initialize array for reynolds stress based on true mean bubble velocity
+    rs_true_bubble = np.empty((len(vel_rec),3,3))
+    for ii in range(0,len(t_rec)):
+        u_x = vel_true_bubble[ii,0] - mean_vel_true_bubble[0]
+        u_y = vel_true_bubble[ii,1] - mean_vel_true_bubble[1]
+        u_z = vel_true_bubble[ii,2] - mean_vel_true_bubble[2]
+        rs_true_bubble[ii,0,0] = u_x*u_x
+        rs_true_bubble[ii,0,1] = u_x*u_y
+        rs_true_bubble[ii,0,2] = u_x*u_z
+        rs_true_bubble[ii,1,0] = u_y*u_x
+        rs_true_bubble[ii,1,1] = u_y*u_y
+        rs_true_bubble[ii,1,2] = u_y*u_z
+        rs_true_bubble[ii,2,0] = u_z*u_x
+        rs_true_bubble[ii,2,1] = u_z*u_y
+        rs_true_bubble[ii,2,2] = u_z*u_z
+    mean_rs_true_bubble = rs_true_bubble.mean(axis=0)
+    turbulent_intensity_bubble = np.sqrt(np.array([
+            mean_rs_true_bubble[0,0], \
+            mean_rs_true_bubble[1,1], \
+            mean_rs_true_bubble[2,2], \
+            ])) / mean_vel_true_bubble[0]
+    # Calculate errors in mean velocity and Reynolds stresses
+    # Relative error of mean velocity with regard to mean of entire bubble velocity time series 
+    rel_error_mean_vel = pd.DataFrame([((vel_mean_rec-vel_mean_true) \
+        / vel_mean_true)],index=[0],columns=['ux','uy','uz'])
+    rel_error_weighted_mean_vel = pd.DataFrame([((vel_weighted_mean_rec-vel_mean_true) \
+        / vel_mean_true)],index=[0],columns=['ux','uy','uz'])
+    # Relative error of mean velocity with regard to mean bubble velocity during tfbpi
+    rel_error_mean_vel_bubble = pd.DataFrame([((vel_mean_rec-mean_vel_true_bubble) \
+        / mean_vel_true_bubble)],index=[0],columns=['ux','uy','uz'])
+    # Error of RST with regard to mean of entire bubble velocity time series 
+    rel_error_rs = pd.DataFrame((rs_rec-rs_true)/rs_true, \
+        index=['x','y','z'],columns=['x','y','z'])
+    # Relative error of RST with regard to mean bubble velocity during tfbpi
+    rel_error_rs_bubble = pd.DataFrame((rs_rec-mean_rs_true_bubble)/mean_rs_true_bubble, \
+        index=['x','y','z'],columns=['x','y','z'])
+    # Error of mean velocity with regard to mean of entire bubble velocity time series 
+    error_mean_vel = pd.DataFrame([(vel_mean_rec-vel_mean_true)],index=[0],columns=['ux','uy','uz'])
+    error_weighted_mean_vel = pd.DataFrame([(vel_weighted_mean_rec-vel_mean_true)],index=[0],columns=['ux','uy','uz'])
+    # Error of mean velocity with regard to mean bubble velocity during tfbpi
+    error_mean_vel_bubble = pd.DataFrame([(vel_mean_rec-mean_vel_true_bubble)],index=[0],columns=['ux','uy','uz'])
+    # Error of RST with regard to mean of entire bubble velocity time series 
+    error_rs = pd.DataFrame(rs_rec-mean_rs_true_bubble, \
+        index=['x','y','z'],columns=['x','y','z'])
+    error_rs_bubble = pd.DataFrame(rs_rec-rs_true, \
+        index=['x','y','z'],columns=['x','y','z'])
+    rel_error_Ti = pd.DataFrame([((Ti_rec-Ti_true)/Ti_true)],index=[0],columns=['Tix','Tiy','Tiz'])
+    rel_error_Ti_bubble = pd.DataFrame([((Ti_rec-turbulent_intensity_bubble)/turbulent_intensity_bubble)],index=[0],columns=['Tix','Tiy','Tiz'])
+    error_Ti = pd.DataFrame([(Ti_rec-Ti_true)],index=[0],columns=['Tix','Tiy','Tiz'])
+    error_Ti_bubble = pd.DataFrame([(Ti_rec-turbulent_intensity_bubble)],index=[0],columns=['Tix','Tiy','Tiz'])
     # Write output
-    error_D.to_csv(path / 'errors_D.csv', index=True,index_label='t')
+    errors_D.to_csv(path / 'errors_D.csv', index=True,index_label='t')
     RMSD_vel_reco.to_csv(path / 'RMSD_vel_reco.csv', index=True,index_label='t')
     RMSD_vel_true.to_csv(path / 'RMSD_vel_true.csv', index=True,index_label='t')
+    E_vel.to_csv(path / 'E_vel.csv', index=True,index_label='t')
+    RE_vel.to_csv(path / 'RE_vel.csv', index=True,index_label='t')
+    AE_vel.to_csv(path / 'AE_vel.csv', index=True,index_label='t')
+    ARE_vel.to_csv(path / 'ARE_vel.csv', index=True,index_label='t')
     summary_b_size.to_csv(path / 'error_summary_bubble_size.csv', index=True)
     summary_vel.to_csv(path / 'error_summary_velocity.csv', index=True)
+    error_mean_vel.to_csv(path / 'error_mean_velocity.csv', index=True)
+    error_weighted_mean_vel.to_csv(path / 'error_weighted_mean_velocity.csv', index=True)
+    error_mean_vel_bubble.to_csv(path / 'error_mean_velocity_bubble.csv', index=True)
+    error_rs.to_csv(path / 'error_reynolds_stresses.csv', index=True)
+    error_rs_bubble.to_csv(path / 'error_reynolds_stresses_bubble.csv', index=True)
+    error_Ti.to_csv(path / 'error_turbulent_intensity.csv', index=True)
+    error_Ti_bubble.to_csv(path / 'error_turbulent_intensity_bubble.csv', index=True)
+    rel_error_mean_vel.to_csv(path / 'rel_error_mean_velocity.csv', index=True)
+    rel_error_weighted_mean_vel.to_csv(path / 'rel_error_weighted_mean_velocity.csv', index=True)
+    rel_error_mean_vel_bubble.to_csv(path / 'rel_error_mean_velocity_bubble.csv', index=True)
+    rel_error_rs.to_csv(path / 'rel_error_reynolds_stresses.csv', index=True)
+    rel_error_rs_bubble.to_csv(path / 'rel_error_reynolds_stresses_bubble.csv', index=True)
+    rel_error_Ti.to_csv(path / 'rel_error_turbulent_intensity.csv', index=True)
+    rel_error_Ti_bubble.to_csv(path / 'rel_error_turbulent_intensity_bubble.csv', index=True)
 
     # Write number of bubbles
     file1 = open(path / "n_bubbles.txt","w")
@@ -227,6 +341,97 @@ def main():
                         wspace=0.4, hspace=0.3)
     #plt.tight_layout()
     fig.savefig(path / 'velocity_variation.svg',dpi=300)
+
+    fig, axs = plt.subplots(3,figsize=(6,4))
+    axs[0].plot(np.linspace(1,len(cumulative_mean_AE),len(cumulative_mean_AE)),cumulative_mean_AE[:,0],color='k',lw=lw)
+    axs[1].plot(np.linspace(1,len(cumulative_mean_AE),len(cumulative_mean_AE)),cumulative_mean_AE[:,1],color='k',lw=lw)
+    axs[2].plot(np.linspace(1,len(cumulative_mean_AE),len(cumulative_mean_AE)),cumulative_mean_AE[:,2],color='k',lw=lw)
+    axs[0].set_ylabel('MAE $u_x$ [m/s]')
+    axs[1].set_ylabel('MAE $u_y$ [m/s]')
+    axs[2].set_ylabel('MAE $u_z$ [m/s]')
+    axs[2].set_xlabel('number of bubbles [-]')
+    # lim = [[fp_vel[0] - 1.2*max(abs(vel_true[:,0]-fp_vel[0])),
+    #         fp_vel[0] + 1.2*max(abs(vel_true[:,0]-fp_vel[0]))],
+    #        [fp_vel[1] - 1.2*max(abs(vel_true[:,1]-fp_vel[1])),
+    #         fp_vel[1] + 1.2*max(abs(vel_true[:,1]-fp_vel[1]))],
+    #        [fp_vel[2] - 1.2*max(abs(vel_true[:,2]-fp_vel[2])),
+    #         fp_vel[2] + 1.2*max(abs(vel_true[:,2]-fp_vel[2]))]]
+    # axs[0].set_ylim([lim[0][0],lim[0][1]])
+    # axs[1].set_ylim([lim[1][0],lim[1][1]])
+    # axs[2].set_ylim([lim[2][0],lim[2][1]])
+    # axs[0].set_xlim([fp_dur/2.0,fp_dur/2.0+0.1])
+    # axs[1].set_xlim([fp_dur/2.0,fp_dur/2.0+0.1])
+    # axs[2].set_xlim([fp_dur/2.0,fp_dur/2.0+0.1])
+    plt.tight_layout()
+    fig.savefig(path / 'AE_convergence.svg',dpi=300)
+
+    lw=0.5
+    fig, axs = plt.subplots(3,figsize=(6,4))
+    axs[0].plot(AE_vel.index,AE_vel['Ux'],color='k',lw=lw,label='MAE $u_i$')
+    axs[1].plot(AE_vel.index,AE_vel['Uy'],color='k',lw=lw,label='MAE $u_i$')
+    axs[2].plot(AE_vel.index,AE_vel['Uz'],color='k',lw=lw,label='MAE $u_i$')
+    axs[2].plot([],[],color='r',lw=lw,label='$u_i$')
+    axs[0].set_ylabel('MAE $u_x$ [m/s]')
+    axs[1].set_ylabel('MAE $u_y$ [m/s]')
+    axs[2].set_ylabel('MAE $u_z$ [m/s]')
+    axs[2].set_xlabel('time $t$ [s]')
+    axs[0].set_ylim([0,1.2*max(AE_vel['Ux'])])
+    axs[1].set_ylim([0,1.2*max(AE_vel['Uy'])])
+    axs[2].set_ylim([0,1.2*max(AE_vel['Uz'])])
+    axs[0].set_xlim([0,10])
+    axs[1].set_xlim([0,10])
+    axs[2].set_xlim([0,10])
+    ax1 = axs[0].twinx()
+    ax2 = axs[1].twinx()
+    ax3 = axs[2].twinx()
+    ax1.plot(t_true,vel_true[:,0],color='r',lw=lw)
+    ax2.plot(t_true,vel_true[:,1],color='r',lw=lw)
+    ax3.plot(t_true,vel_true[:,2],color='r',lw=lw)
+    ax1.set_ylabel('$u_x$ [m/s]')
+    ax2.set_ylabel('$u_y$ [m/s]')
+    ax3.set_ylabel('$u_z$ [m/s]')
+    ax1.set_ylim([np.mean(vel_true[:,0])-1.3*max(vel_true[:,0]-np.mean(vel_true[:,0])),np.mean(vel_true[:,0])+1.3*max(vel_true[:,0]-np.mean(vel_true[:,0]))])
+    ax2.set_ylim([-1.1*max(vel_true[:,1]),1.1*max(vel_true[:,1])])
+    ax3.set_ylim([-1.1*max(vel_true[:,2]),1.1*max(vel_true[:,2])])
+    axs[2].legend(loc=1,ncol=2, bbox_to_anchor=(0.7,-0.7))
+    plt.tight_layout()
+    plt.subplots_adjust(left=0.15, bottom=0.25, right=0.88, top=0.95, wspace=None, hspace=0.5)
+    fig.savefig(path / 'AE_u_ts.svg',dpi=300)
+
+    total_duration = t_true[-1]-t_true[0]
+    ts_frequency = int((len(t_true)-1)/total_duration)
+    dudt = np.diff(vel_true,axis=0)*ts_frequency
+    fig, axs = plt.subplots(3,figsize=(6,4))
+    axs[0].plot(AE_vel.index,AE_vel['Ux'],color='k',lw=lw,label='MAE $u_i$')
+    axs[1].plot(AE_vel.index,AE_vel['Uy'],color='k',lw=lw,label='MAE $u_i$')
+    axs[2].plot(AE_vel.index,AE_vel['Uz'],color='k',lw=lw,label='MAE $u_i$')
+    axs[2].plot([],[],color='r',lw=lw,label='d$u_i$/d$t$')
+    axs[0].set_ylabel('MAE $u_x$ [m/s]')
+    axs[1].set_ylabel('MAE $u_y$ [m/s]')
+    axs[2].set_ylabel('MAE $u_z$ [m/s]')
+    axs[2].set_xlabel('time $t$ [s]')
+    axs[0].set_ylim([0,1.2*max(AE_vel['Ux'])])
+    axs[1].set_ylim([0,1.2*max(AE_vel['Uy'])])
+    axs[2].set_ylim([0,1.2*max(AE_vel['Uz'])])
+    axs[0].set_xlim([0,10])
+    axs[1].set_xlim([0,10])
+    axs[2].set_xlim([0,10])
+    ax1 = axs[0].twinx()
+    ax2 = axs[1].twinx()
+    ax3 = axs[2].twinx()
+    ax1.plot(t_true[:-1],dudt[:,0],color='r',lw=lw)
+    ax2.plot(t_true[:-1],dudt[:,1],color='r',lw=lw)
+    ax3.plot(t_true[:-1],dudt[:,2],color='r',lw=lw)
+    ax1.set_ylabel('d$u_x$/d$t$ [m/s]')
+    ax2.set_ylabel('d$u_y$/d$t$ [m/s]')
+    ax3.set_ylabel('d$u_z$/d$t$ [m/s]')
+    ax1.set_ylim([-1.1*max(dudt[:,0]),1.1*max(dudt[:,0])])
+    ax2.set_ylim([-1.1*max(dudt[:,1]),1.1*max(dudt[:,1])])
+    ax3.set_ylim([-1.1*max(dudt[:,2]),1.1*max(dudt[:,2])])
+    axs[2].legend(loc=1,ncol=2, bbox_to_anchor=(0.7,-0.7))
+    plt.tight_layout()
+    plt.subplots_adjust(left=0.15, bottom=0.25, right=0.88, top=0.95, wspace=None, hspace=0.5)
+    fig.savefig(path / 'AE_dudt_ts.svg',dpi=300)
 
 if __name__ == "__main__":
     main()
