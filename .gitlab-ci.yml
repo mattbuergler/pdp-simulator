@@ -8,7 +8,7 @@ variables:
 
 .run-tests-template: &run-tests-template
   script:
-    - pipenv run PYTHONPATH=$PYTHONPATH:$PWD python tests/runtests.py -Cr tests/[0-9]*
+    - pipenv run python tests/runtests.py -Cr tests/[0-9]*
 
 test:
   image: python:3.9.0
