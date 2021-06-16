@@ -23,7 +23,6 @@ test:
     - /usr/local/bin/python -m pip install --upgrade pip
     - pip install pipenv
     - PIPENV_VENV_IN_PROJECT=1
-    - which python
-    - python --version
+    - pipenv --python $(which python)
   dependencies:
   <<: *run-tests-template
