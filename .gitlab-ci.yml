@@ -16,5 +16,17 @@ variables:
 
 test:
   stage: test
+
+  before_script:
+    - apt-get update
+    - apt-get install -y make build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm libncurses5-dev libncursesw5-dev xz-utils tk-dev libffi-dev liblzma-dev python-openssl
+    - apt-get install -y git
+    - curl https://pyenv.run | bash
+    - export PATH="~/.pyenv/bin:$PATH"
+    - eval "$(pyenv init -)"
+    - eval "$(pyenv virtualenv-init -)"
+    - pyenv install -v 3.9.0
+    - pip install pipenv
+    - PIPENV_VENV_IN_PROJECT=1
   dependencies:
   <<: *run-tests-template
