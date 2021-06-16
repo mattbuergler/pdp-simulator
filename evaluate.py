@@ -433,5 +433,41 @@ def main():
     plt.subplots_adjust(left=0.15, bottom=0.25, right=0.88, top=0.95, wspace=None, hspace=0.5)
     fig.savefig(path / 'AE_dudt_ts.svg',dpi=300)
 
+    # Accelrations for one sampling frequencies
+    fs1=7
+    fig = plt.figure(figsize=(3.0,2.5))
+    (n_p, bins_p, patches_p) = plt.hist(E_vel['Ux'].values, \
+            bins=100,density=True, color='b', alpha=0.7,\
+            range=(min(E_vel['Ux'].values),max(E_vel['Ux'].values)))
+    plt.ylabel('Frequency [-]')
+    plt.xlabel(r'Error $u_x$ [m/s]')
+    plt.xlim([-max(abs(bins_p)),max(abs(bins_p))])
+    plt.tight_layout()
+    fig.savefig(path / 'histogram_error_ux.svg',dpi=300)
+
+    # Accelrations for one sampling frequencies
+    fs1=7
+    fig = plt.figure(figsize=(3.0,2.5))
+    (n_p, bins_p, patches_p) = plt.hist(E_vel['Uy'].values, \
+            bins=100,density=True, color='b', alpha=0.7,\
+            range=(min(E_vel['Uy'].values),max(E_vel['Uy'].values)))
+    plt.ylabel('Frequency [-]')
+    plt.xlabel(r'Error $u_y$ [m/s]')
+    plt.xlim([-max(abs(bins_p)),max(abs(bins_p))])
+    plt.tight_layout()
+    fig.savefig(path / 'histogram_error_uy.svg',dpi=300)
+
+    # Accelrations for one sampling frequencies
+    fs1=7
+    fig = plt.figure(figsize=(3.0,2.5))
+    (n_p, bins_p, patches_p) = plt.hist(E_vel['Uz'].values, \
+            bins=100,density=True, color='b', alpha=0.7,\
+            range=(min(E_vel['Uz'].values),max(E_vel['Uz'].values)))
+    plt.ylabel('Frequency [-]')
+    plt.xlabel(r'Error $u_z$ [m/s]')
+    plt.xlim([-max(abs(bins_p)),max(abs(bins_p))])
+    plt.tight_layout()
+    fig.savefig(path / 'histogram_error_uz.svg',dpi=300)
+
 if __name__ == "__main__":
     main()

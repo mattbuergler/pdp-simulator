@@ -263,12 +263,13 @@ class TestRunner:
         # create simulation call
         # get a velocity estimate
         config = json.loads((runfile).read_bytes())
-        vel = config["FLOW_PROPERTIES"]["mean_velocity"][0]
+        vel = np.asarray(config["FLOW_PROPERTIES"]["mean_velocity"])
+        mag_vel = np.sqrt(vel.dot(vel))
         cmd = [
             "python",
             str(MAINPATH / "mssrc.py"),
             "-vel",
-            str(vel),
+            str(mag_vel),
             '.'
         ]
         return self.runCommon(cmd, testDirectory, "a")
