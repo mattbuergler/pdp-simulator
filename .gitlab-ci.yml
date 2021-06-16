@@ -7,8 +7,6 @@ variables:
 
 
 .run-tests-template: &run-tests-template
-  image: ubuntu:bionic
-
   script:
     - pipenv run python tests/runtests.py -Cr tests/[0-9]*
 
