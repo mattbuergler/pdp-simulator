@@ -8,13 +8,17 @@ variables:
 
 .run-tests-template: &run-tests-template
   script:
-    - tests/runtests.py \
-          -C \
-          -r \
-          -b {} \
-          tests/[0-9]*
+    - pipenv run python tests/runtests.py -Cr tests/[0-9]*
 
 test:
+  image: python:3.9.0
   stage: test
+  before_script:
+    - apt-get update
+    - /usr/local/bin/python -m pip install --upgrade pip
+    - pip install pipenv
+    - PIPENV_VENV_IN_PROJECT=1
+    - pipenv --python $(which python)
+    - pipenv install --ignore-pipfile
   dependencies:
   <<: *run-tests-template
