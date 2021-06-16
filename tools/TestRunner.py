@@ -268,10 +268,9 @@ class TestRunner:
         cmd = [
             "python",
             "mssrc.py",
-            testDirectory / "run"
             "-vel",
             str(mag_vel),
-            '.'
+            testDirectory / "run"
         ]
         return self.runCommon(cmd, testDirectory, "a")
 
