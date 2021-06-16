@@ -23,5 +23,6 @@ test:
     - pip install pipenv
     - PIPENV_VENV_IN_PROJECT=1
     - pipenv --python $(which python)
+    - pipenv install --ignore-pipfile
   dependencies:
   <<: *run-tests-template
