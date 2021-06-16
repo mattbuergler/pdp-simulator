@@ -241,13 +241,13 @@ class TestRunner:
         # create simulation call
         cmd = [
             "python",
-            str(MAINPATH / "sbg.py")
+            "sbg.py"
         ]
         if self.velocity_tsa:
             cmd.append("-tsa")
         cmd.append("-r")
         cmd.append(testDef['SBG'])
-        cmd.append('.')
+        cmd.append(testDirectory / "run")
         return self.runCommon(cmd, testDirectory, "a")
 
     def runRA(self, testDirectory: pathlib.Path):
@@ -267,7 +267,8 @@ class TestRunner:
         mag_vel = np.sqrt(vel.dot(vel))
         cmd = [
             "python",
-            str(MAINPATH / "mssrc.py"),
+            "mssrc.py",
+            testDirectory / "run"
             "-vel",
             str(mag_vel),
             '.'
@@ -288,8 +289,8 @@ class TestRunner:
         # create simulation call
         cmd = [
             "python",
-            str(MAINPATH / "evaluate.py"),
-            '.'
+            "evaluate.py",
+            testDirectory / "run"
         ]
         return self.runCommon(cmd, testDirectory, "a")
 
@@ -318,7 +319,7 @@ class TestRunner:
         success = 0
         startingTime = time.time()
         try:
-            out = run_process(cmd, testDirectory / "run").stdout
+            out = run_process(cmd, pathlib.Path.cwd()).stdout
             success = 1
         except subprocess.CalledProcessError as error:
             out = error.stdout
