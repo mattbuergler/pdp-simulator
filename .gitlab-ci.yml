@@ -8,7 +8,7 @@ variables:
 
 .run-tests-template: &run-tests-template
   script:
-    - tests/runtests.py \
+    - python tests/runtests.py \
           -C \
           -r \
           -b {} \
@@ -19,6 +19,7 @@ test:
   stage: test
   before_script:
     - apt-get update
+    - /usr/local/bin/python -m pip install --upgrade pip
     - pip install pipenv
     - PIPENV_VENV_IN_PROJECT=1
   dependencies:
