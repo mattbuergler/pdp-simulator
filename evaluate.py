@@ -11,6 +11,7 @@ import bisect
 import time
 import math
 import matplotlib.pyplot as plt
+import scipy.stats as stats
 try:
     from dataio.H5Writer import H5Writer
     from dataio.H5Reader import H5Reader
@@ -49,10 +50,13 @@ def main():
     # Get mean flow velocity and duration
     fp_vel = config['FLOW_PROPERTIES']['mean_velocity']
     fp_dur = config['FLOW_PROPERTIES']['duration']
+    fp_ti = config['FLOW_PROPERTIES']['turbulent_intensity']
 
     # Parse velocity time series
     # Create a H5-file reader
     reader = H5Reader(path / 'flow_data.h5')
+    # Read the 'true' continuous phase velocity time series
+    vel_true_fluid = reader.getDataSet('fluid/velocity')[:]
     # Read the 'true' velocity time series
     vel_true = reader.getDataSet('bubbles/velocity')[:]
     # Read the mean velocity
@@ -433,8 +437,7 @@ def main():
     plt.subplots_adjust(left=0.15, bottom=0.25, right=0.88, top=0.95, wspace=None, hspace=0.5)
     fig.savefig(path / 'AE_dudt_ts.svg',dpi=300)
 
-    # Accelrations for one sampling frequencies
-    fs1=7
+    # Histogram of velocity error ux
     fig = plt.figure(figsize=(3.0,2.5))
     (n_p, bins_p, patches_p) = plt.hist(E_vel['Ux'].values, \
             bins=100,density=True, color='b', alpha=0.7,\
@@ -445,8 +448,7 @@ def main():
     plt.tight_layout()
     fig.savefig(path / 'histogram_error_ux.svg',dpi=300)
 
-    # Accelrations for one sampling frequencies
-    fs1=7
+    # Histogram of velocity error ux
     fig = plt.figure(figsize=(3.0,2.5))
     (n_p, bins_p, patches_p) = plt.hist(E_vel['Uy'].values, \
             bins=100,density=True, color='b', alpha=0.7,\
@@ -457,8 +459,7 @@ def main():
     plt.tight_layout()
     fig.savefig(path / 'histogram_error_uy.svg',dpi=300)
 
-    # Accelrations for one sampling frequencies
-    fs1=7
+    # Histogram of velocity error ux
     fig = plt.figure(figsize=(3.0,2.5))
     (n_p, bins_p, patches_p) = plt.hist(E_vel['Uz'].values, \
             bins=100,density=True, color='b', alpha=0.7,\
@@ -468,6 +469,40 @@ def main():
     plt.xlim([-max(abs(bins_p)),max(abs(bins_p))])
     plt.tight_layout()
     fig.savefig(path / 'histogram_error_uz.svg',dpi=300)
+
+    # Histogram of velocities
+    var_names = ['x','y','z']
+    # Calculate the magnitude of the input velocities and standard dev.
+    fp_vel = np.asarray(fp_vel)
+    fp_vel_mag = np.sqrt(fp_vel.dot(fp_vel))
+    sigma = fp_vel_mag * np.asarray(fp_ti)
+    fig, axs = plt.subplots(ncols=3,\
+            figsize=(3*2.5,2.5))
+    for jj,var_name in enumerate(var_names):
+        # Theoretical input distribution
+        x = np.linspace(fp_vel[jj] - 3*sigma[jj], fp_vel[jj] + 3*sigma[jj], 10000)
+        input_vel = stats.norm.pdf(x, fp_vel[jj], sigma[jj])
+        axs[jj].plot(x, input_vel, color='k', label='input cont.')
+        (n_c, bins_c, patches_c) = axs[jj].hist(vel_true_fluid[:,jj], \
+            bins=50, density=True, color='b', alpha=0.7, label='sim. cont.',\
+            range=(min(vel_true_fluid[:,jj]),max(vel_true_fluid[:,jj])))
+        (n_c, bins_c, patches_c) = axs[jj].hist(vel_true[:,jj], \
+            bins=50, density=True, color='r', alpha=0.7, label='sim. disp.',\
+            range=(min(vel_true[:,jj]),max(vel_true[:,jj])))
+        (n_c, bins_c, patches_c) = axs[jj].hist(vel_rec[:,jj], \
+            bins=50, density=True, color='g', alpha=0.7, label='reconst. disp.',\
+            range=(min(vel_rec[:,jj]),max(vel_rec[:,jj])))
+        if jj == 0:
+            axs[jj].set_ylabel('Frequency [-]')
+            axs[jj].legend(loc=3,fontsize=10,bbox_to_anchor=(-0.15,-0.6),ncol=4,frameon=False)
+        axs[jj].set_xlabel(f'Velocity $u_{var_name}$ [m/s]')
+        axs[jj].set_xlim([min(x),max(x)])
+        if jj == 1:
+            axs[jj].set_yscale('log')
+        if jj == 2:
+            axs[jj].set_yscale('log')
+    plt.subplots_adjust(left=0.1, bottom=0.35, right=0.95, top=0.95, wspace=0.3, hspace=None)
+    fig.savefig(path / 'velocity_histrograms.svg',dpi=300)
 
 if __name__ == "__main__":
     main()
