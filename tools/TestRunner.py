@@ -288,7 +288,7 @@ class TestRunner:
         cmd = [
             "python",
             str(pathlib.Path(self.bin) / "evaluate.py"),
-            testDirectory / "."
+            "."
         ]
         return self.runCommon(cmd, testDirectory, "a")
 
@@ -306,7 +306,7 @@ class TestRunner:
         cmd = [
             "python",
             str(pathlib.Path(self.bin) / "velcoity_tsa.py"),
-            testDirectory / "."
+            "."
         ]
         return self.runCommon(cmd, testDirectory, "a")
 
