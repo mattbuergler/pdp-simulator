@@ -1,14 +1,11 @@
 stages:
+  - analyze
   - test
 
 variables:
   GIT_SUBMODULE_STRATEGY: normal
   DEBIAN_FRONTEND: noninteractive
 
-
-.run-tests-template: &run-tests-template
-  script:
-    - pipenv run python tests/runtests.py -Cr tests/[0-9]*
 
 analyze:
   image: ubuntu:bionic
@@ -23,6 +20,10 @@ analyze:
   script:
     - python3 -m mypy sbg.py sbg_functions.py mssrc.py evaluate.py velocity_tsa.py tools/globals.py tools/TestRunner.py tools/TestDefinition.py dataio/H5Base.py dataio/H5Reader.py dataio/H5Writer.py --ignore-missing-imports --check-untyped-defs --python-version 3.9
     - python3 -m black --check sbg.py sbg_functions.py mssrc.py evaluate.py velocity_tsa.py tools/globals.py tools/TestRunner.py tools/TestDefinition.py dataio/H5Base.py dataio/H5Reader.py dataio/H5Writer.py --ignore-missing-imports --check-untyped-defs --python-version 3.9
+
+.run-tests-template: &run-tests-template
+  script:
+    - pipenv run python tests/runtests.py -Cr tests/[0-9]*
 
 test:
   image: python:3.9.0
