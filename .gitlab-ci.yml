@@ -5,7 +5,6 @@ variables:
   GIT_SUBMODULE_STRATEGY: normal
   DEBIAN_FRONTEND: noninteractive
 
-
 .run-tests-template: &run-tests-template
   script:
     - pipenv run python tests/runtests.py -Cr tests/[0-9]*

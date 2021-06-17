@@ -12,7 +12,7 @@ import matplotlib as plt
 
 try:
     import sbg_functions
-    import sbg_plot
+    import velocity_tsa
 except ImportError:
     print("")
     raise
@@ -24,7 +24,6 @@ except ImportError:
     The user-defined parameters are passed via the input_file (JSON).
     A time series is generated and saved to a file.
 """
-
 def main():
     """
         Main function of the Stochastic Bubble Generator (SBG)
@@ -37,6 +36,7 @@ def main():
 
     # Create parser to read in the configuration JSON-file to read from
     # the command line interface (CLI)
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('path', type=str,
         help="The path to the scenario directory.")
@@ -50,8 +50,8 @@ def main():
         + "signal     - create only the probe signal from existing velocity time series and trajectory\n"
         + "all        - create velocity time series, trajectory and also the probe signal\n"
     )
-    parser.add_argument('-v', '--visualize', action='store_true',
-        help="Vizualize the results.", default=False)
+    parser.add_argument('-tsa', '--velocity_tsa', action='store_true',
+        help="Run the velocity time series analysis.", default=False)
     parser.add_argument('-p', '--progress', action='store_true',
         help='Show progress bar.')
     args = parser.parse_args()
@@ -70,10 +70,15 @@ def main():
     command = args.run
     if command in ["timeseries", 'all']:
         # Generate the stochastic velocity and trajectory time series
-        sbg_functions.SBG_auto_corr(
+        sbg_functions.SBG_fluid_velocity(
             path=path,
             flow_properties=config['FLOW_PROPERTIES'],
             reproducible=config['REPRODUCIBLE'],
+            progress=args.progress
+        )
+        sbg_functions.SBG_bubble_velocity(
+            path=path,
+            flow_properties=config['FLOW_PROPERTIES'],
             progress=args.progress
         )
     if command in ["signal", 'all']:
@@ -87,11 +92,8 @@ def main():
             )
 
     # Plot results if necessary
-    if args.visualize:
-        sbg_plot.plot_results(
-            path=path,
-            flow_properties=config['FLOW_PROPERTIES']
-            )
+    if args.velocity_tsa:
+        velocity_tsa.main(str(path))
 
 if __name__ == "__main__":
     main()

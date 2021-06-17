@@ -168,7 +168,6 @@ def get_bubble_size(flow_properties):
 
 def get_mean_bubble_sve_size(flow_properties):
     # Returns mean sphere-volume-equivalent bubble size D_sve
-
     # Get bubble properties
     bubbles = flow_properties['bubbles']
     if bubbles['size_distribution'] == 'constant':
@@ -177,7 +176,7 @@ def get_mean_bubble_sve_size(flow_properties):
         D_sve = math.exp(bubbles['mean_ln_diameter'])
     return D_sve
 
-def SBG_auto_corr(path, flow_properties, reproducible, progress):
+def SBG_fluid_velocity(path, flow_properties, reproducible, progress):
     """SBG including correlation between u' and v' as well as autocorrelation
     in u(t) depending on integral time scale.
 
@@ -199,7 +198,7 @@ def SBG_auto_corr(path, flow_properties, reproducible, progress):
         np.random.seed(42)
 
     # Define the time average flow velocity [m/s]
-    Um = np.asarray(flow_properties['mean_velocity'])
+    um = np.asarray(flow_properties['mean_velocity'])
     # Optional factor to use only time average flow velocity without any
     # stochasticity (mainly for testing purposes)
     if "ti_factor" in flow_properties:
@@ -208,14 +207,11 @@ def SBG_auto_corr(path, flow_properties, reproducible, progress):
         ti_f = 1.0
     # Define the standard deviations of the RMS velocities [-]
     sigma = np.empty(3)
-    sigma[0] = Um[0] * flow_properties['turbulent_intensity'][0] * ti_f
-    sigma[1] = Um[0] * flow_properties['turbulent_intensity'][1] * ti_f
-    sigma[2] = Um[0] * flow_properties['turbulent_intensity'][2] * ti_f
+    # Calculate the magnitude of the input velocity
+    um_mag = np.sqrt(um.dot(um))
+    sigma = um_mag * np.asarray(flow_properties['turbulent_intensity']) * ti_f
     # Define the integral time scales of the flow velocity [s]
-    T = np.empty(3)
-    T[0] = flow_properties['integral_timescale'][0]
-    T[1] = flow_properties['integral_timescale'][1]
-    T[2] = flow_properties['integral_timescale'][2]
+    T = np.asarray(flow_properties['integral_timescale'])
 
     # Simulate time series with duration [s]
     duration = flow_properties['duration'];
@@ -239,25 +235,23 @@ def SBG_auto_corr(path, flow_properties, reproducible, progress):
            [pXY, 1.0, pYZ], \
            [pXZ, pYZ, 1.0]]
 
-    print('\nGenerating velocity and trajectory time series\n')
+    print('\nGenerating velocity and trajectory time series of the fluid\n')
     # Time series is written in chunks of size n_chunk_max in order to avoid
     # memory overload
     n_chunk_max = 10000
     # Create the H5-file writer
     writer = H5Writer(path / 'flow_data.h5', 'w')
     # Create the velocity data set for the entire time series of length n
-    writer.createDataSet('flow/velocity', (n,3), 'float64')
-    writer.createDataSet('flow/trajectory', (n,3), 'float64')
-    writer.writeDataSet('flow/time', t, 'float64')
+    writer.createDataSet('fluid/velocity', (n,3), 'float64')
+    writer.createDataSet('fluid/trajectory', (n,3), 'float64')
+    writer.writeDataSet('fluid/time', t, 'float64')
     # Initialize with mean flow velocity and write to file
-    U_old = np.empty((1,3)) * np.NaN
-    U_old[0,0] = Um[0]
-    U_old[0,1] = Um[1]
-    U_old[0,2] = Um[2]
-    writer.write2DataSet('flow/velocity', U_old, row=0, col=0)
+    u_f_old = np.empty((1,3)) * np.NaN
+    u_f_old[0,:] = um
+    writer.write2DataSet('fluid/velocity', u_f_old, row=0, col=0)
     # Initialize trajectory
-    X_old = np.zeros((1,3))
-    writer.write2DataSet('flow/trajectory', X_old, row=0, col=0)
+    x_f_old = np.zeros((1,3))
+    writer.write2DataSet('fluid/trajectory', x_f_old, row=0, col=0)
     kk = 1
     while (kk < n):
         # Define the actual chunk size
@@ -265,56 +259,191 @@ def SBG_auto_corr(path, flow_properties, reproducible, progress):
         # Create multivariate normal random variables for chunk
         R = np.random.multivariate_normal(mean, cov, n_chunk)
         # Initialize the velocity and trajectory arrays
-        U = np.empty((n_chunk,3)) * np.NaN
-        X = np.empty((n_chunk,3)) * np.NaN
+        u_f = np.empty((n_chunk,3)) * np.NaN
+        x_f = np.empty((n_chunk,3)) * np.NaN
         # First velocity vector depends on old chunk
-        U[0,0] = SBG_dt_corr(U_old[0,0], Um[0], sigma[0], T[0], dt, R[0,0]);
-        U[0,1] = SBG_dt_corr(U_old[0,1], Um[1], sigma[1], T[1], dt, R[0,1]);
-        U[0,2] = SBG_dt_corr(U_old[0,2], Um[2], sigma[2], T[2], dt, R[0,2]);
+        u_f[0,0] = SBG_dt_corr(u_f_old[0,0], um[0], sigma[0], T[0], dt, R[0,0]);
+        u_f[0,1] = SBG_dt_corr(u_f_old[0,1], um[1], sigma[1], T[1], dt, R[0,1]);
+        u_f[0,2] = SBG_dt_corr(u_f_old[0,2], um[2], sigma[2], T[2], dt, R[0,2]);
         # First trajectory vector depends on old chunk
-        X[0,0] = X_old[0,0] + (U[0,0]+U_old[0,0])/2.0*dt;
-        X[0,1] = X_old[0,1] + (U[0,1]+U_old[0,1])/2.0*dt;
-        X[0,2] = X_old[0,2] + (U[0,2]+U_old[0,2])/2.0*dt;
+        x_f[0,0] = x_f_old[0,0] + (u_f[0,0]+u_f_old[0,0])/2.0*dt;
+        x_f[0,1] = x_f_old[0,1] + (u_f[0,1]+u_f_old[0,1])/2.0*dt;
+        x_f[0,2] = x_f_old[0,2] + (u_f[0,2]+u_f_old[0,2])/2.0*dt;
         # Calculate rest of the chunk
         for ii in range(1,n_chunk):
             # Calculate velocity
-            U[ii,0] = SBG_dt_corr(U[ii-1,0], Um[0], sigma[0], T[0], dt, R[ii,0]);
-            U[ii,1] = SBG_dt_corr(U[ii-1,1], Um[1], sigma[1], T[1], dt, R[ii,1]);
-            U[ii,2] = SBG_dt_corr(U[ii-1,2], Um[2], sigma[2], T[2], dt, R[ii,2]);
+            u_f[ii,0] = SBG_dt_corr(u_f[ii-1,0], um[0], sigma[0], T[0], dt, R[ii,0]);
+            u_f[ii,1] = SBG_dt_corr(u_f[ii-1,1], um[1], sigma[1], T[1], dt, R[ii,1]);
+            u_f[ii,2] = SBG_dt_corr(u_f[ii-1,2], um[2], sigma[2], T[2], dt, R[ii,2]);
             # Calculate trajectory
-            X[ii,0] = X[ii-1,0] + (U[ii,0]+U[ii-1,0])/2.0*dt;
-            X[ii,1] = X[ii-1,1] + (U[ii,1]+U[ii-1,1])/2.0*dt;
-            X[ii,2] = X[ii-1,2] + (U[ii,2]+U[ii-1,2])/2.0*dt;
+            x_f[ii,0] = x_f[ii-1,0] + (u_f[ii,0]+u_f[ii-1,0])/2.0*dt;
+            x_f[ii,1] = x_f[ii-1,1] + (u_f[ii,1]+u_f[ii-1,1])/2.0*dt;
+            x_f[ii,2] = x_f[ii-1,2] + (u_f[ii,2]+u_f[ii-1,2])/2.0*dt;
         # Write chunk to .h5 file
-        writer.write2DataSet('flow/velocity', U, row=kk, col=0)
-        writer.write2DataSet('flow/trajectory', X, row=kk, col=0)
+        writer.write2DataSet('fluid/velocity', u_f, row=kk, col=0)
+        writer.write2DataSet('fluid/trajectory', x_f, row=kk, col=0)
         # Save last velocity and trajectory
-        U_old[0,:] = U[-1,:]
-        X_old[0,:] = X[-1,:]
+        u_f_old[0,:] = u_f[-1,:]
+        x_f_old[0,:] = x_f[-1,:]
         # Write chunk to .h5 file
         kk+=n_chunk
         # Display progress
         if progress:
             printProgressBar(kk, n, prefix = 'Progress:', suffix = 'Complete', length = 50)
-    ds_vel = writer.getDataSet('flow/velocity')
-    ds_vel.attrs['labels'] = ['Ux','Uy','Uz']
-    ds_traj = writer.getDataSet('flow/trajectory')
-    ds_traj.attrs['labels'] = ['x','y','z']
-    writer.write2DataSet('flow/trajectory', X, row=kk, col=0)
+    writer.close()
+    # Calculate statistics
+    # Create a H5-file reader
+    reader = H5Reader(path / 'flow_data.h5')
+    # Read the fluid velocity
+    u_f = reader.getDataSet('fluid/velocity')[:]
+    reader.close()
+
+    # Calculate the mean velocity
+    u_f_m = u_f.mean(axis=0)
+    # Initialize the Reynolds stress tensor
+    reynolds_stress = np.empty((len(u_f),3,3))
+    for ii in range(0,len(u_f)):
+        # Calculate the velocity fluctuation
+        u_f_prime = u_f[ii,:]-u_f_m
+        # Reynolds stresses as outer product of fluctuations
+        reynolds_stress[ii,:,:] = np.outer(u_f_prime, u_f_prime)
+    # Average the Reynolds stress tensor
+    mean_reynolds_stress = reynolds_stress.mean(axis=0)
+    # Calculate turbulent intensity with regard to mean x-velocity
+    turbulent_intensity = np.sqrt(np.array([
+            mean_reynolds_stress[0,0], \
+            mean_reynolds_stress[1,1], \
+            mean_reynolds_stress[2,2], \
+            ])) / np.sqrt(u_f_m.dot(u_f_m))
+    # Write the statistics
+    writer = H5Writer(path / 'flow_data.h5', 'a')
+    writer.writeDataSet('fluid/mean_velocity', \
+        u_f_m, 'float64')
+    writer.writeDataSet('fluid/reynold_stresses', \
+        mean_reynolds_stress, 'float64')
+    writer.writeDataSet('fluid/turbulent_intensity', \
+        mean_reynolds_stress, 'float64')
     flow_props = str(flow_properties)
     writer.writeStringDataSet('.flow_properties', flow_props)
     writer.close()
     time2 = time.time()
-    print(f'Successfully written velocity time series and trajectory')
+    print(f'Successfully written fluid velocity time series and trajectory')
     print(f'Finished in {time2-time1} seconds\n')
 
-def SBG_interp_trajectory(t_traj, X, t):
+def SBG_bubble_velocity(path, flow_properties, progress):
+    """Calculate the bubble velocity based on a force balance equation between drag and virtual mass acting on the bubble by the fluid.
+
+        Parameters
+        ----------
+        path      (pathlib.Path): The directory
+        flow_properties   (dict): A dictionary containing the flow properties
+        progress          (bool): A flag to print the progress
+
+        Returns
+        ----------
+        -
+    """
+    time1 = time.time()
+
+    # Create a H5-file reader
+    reader = H5Reader(path / 'flow_data.h5')
+    # Read the time vector
+    t_f = reader.getDataSet('fluid/time')[:]
+    # Read the fluid velocity
+    u_f = reader.getDataSet('fluid/velocity')[:]
+    reader.close()
+
+    print('\nGenerating velocity and trajectory time series of the bubbles\n')
+
+    # Initialize velocity time series and trajectory of the bubble
+    u_p = np.empty((len(u_f),3)) * np.nan
+    x_p = np.empty((len(u_f),3)) * np.NaN
+
+    # Set initial conditions: u_p(t=0) = u_f(t=0) 
+    u_p[0,:] = u_f[0,:]
+    x_p[0,:] = 0.0
+    # Solve momentum equation for bubble velocity with a first order Euler
+    # scheme. The forces acting on the bubble are given by Eq. 5 in 
+    # Balachandar, S., & Eaton, J. K. (2010). Turbulent dispersed multiphase
+    # flow. Annual review of fluid mechanics, 42, 111-133.
+    # https://doi.org/10.1146/annurev.fluid.010908.165243
+    # Some parameters
+    C_M = 0.5                   # virtual mass coefficient (Rushe, 2002)
+    rho_f = 1000.0              # density of the fluid [kg/m3]
+    rho_p = 1.0                 # density of the bubble [kg/m3]
+    mu_f = 0.001                # dyn. viscosity of the fluid [Pa*s]
+    piTimes3 = 3.0 * math.pi    # 3 * Pi
+    # get the mean sphere-volume-equivalent bubble diameter
+    d = get_mean_bubble_sve_size(flow_properties)
+    V_p = math.pi/6.0*d**3.     # sphere volume
+    for ii in range(1, len(t_f)):
+        dt = t_f[ii] - t_f[ii-1]            # Integration time step
+        u_r = u_f[ii-1,:] - u_p[ii-1,:]     # Rel. velocity of prev. timestep
+        Re = rho_p*abs(u_r)*d/mu_f          # Bubble Reynolds number
+        phi = 1.0 + 0.15*(Re**0.687)        # Drag coefficient * Re / 24
+        du_dt = 1.0/dt * (u_f[ii,:]
+                        -u_f[ii-1,:])       # Time derivative of fluid velocity
+        u_p[ii,:] = u_p[ii-1,:] + dt/(V_p*(rho_p + C_M*rho_f)) * ( \
+                            # Drag force
+                            piTimes3 * mu_f * d * u_r * phi \
+        #                     # Acceleration force of fluid
+        #                     + rho_f * du_dt \
+        #                     # Added mass force
+        #                     + (C_M*rho_f) * du_dt \
+                        )
+        # Calculate trajectory
+        x_p[ii,:] = x_p[ii-1,:] + (u_p[ii,:]+u_p[ii-1,:])/2.0*dt;
+
+    # Calculate the statistics
+    # Calculate mean velocity
+    u_p_m = u_p.mean(axis=0)
+    # Initialize the reynolds stress tensors time series
+    reynolds_stress = np.empty((len(u_p),3,3))
+    for ii in range(0,len(u_p)):
+        # Calculate velocity fluctuations
+        u_p_prime = u_p[ii,:]-u_p_m
+        # Reynolds stresses as outer product of fluctuations
+        reynolds_stress[ii,:,:] = np.outer(u_p_prime, u_p_prime)
+    # Calculate mean Reynolds stresses
+    mean_reynolds_stress = reynolds_stress.mean(axis=0)
+    # Calculate turbulent intensity with regard to mean x-velocity
+    turbulent_intensity = np.sqrt(np.array([
+            mean_reynolds_stress[0,0], \
+            mean_reynolds_stress[1,1], \
+            mean_reynolds_stress[2,2], \
+            ])) / np.sqrt(u_p_m.dot(u_p_m))
+    # Create the H5-file writer
+    writer = H5Writer(path / 'flow_data.h5', 'a')
+    # Write the time vector
+    writer.writeDataSet('bubbles/time', t_f, 'float64')
+    # Write the velocity time series
+    writer.writeDataSet('bubbles/velocity', u_p, 'float64')
+    # Write the trajectory
+    writer.writeDataSet('bubbles/trajectory', x_p, 'float64')
+    writer.writeDataSet('bubbles/mean_velocity', \
+        u_p_m, 'float64')
+    writer.writeDataSet('bubbles/reynold_stresses', \
+        mean_reynolds_stress, 'float64')
+    writer.writeDataSet('bubbles/turbulent_intensity', \
+        turbulent_intensity, 'float64')
+    writer.close()
+    time2 = time.time()
+    print(f'Successfully written bubble velocity time series and trajectory')
+    print(f'Finished in {time2-time1} seconds\n')
+
+def SBG_interp_trajectory(
+    t_traj,
+    X,
+    t):
     idx = bisect.bisect_right(t_traj, t)
     m = (X[idx] - X[idx-1]) / (t_traj[idx] - t_traj[idx-1])
     Xinterp = X[idx] + m*(t - t_traj[idx])
     return Xinterp
 
-def SBG_get_Signal_traj(t_traj, X, t_probe):
+def SBG_get_Signal_traj(
+    t_traj,
+    X,
+    t_probe):
     t_probe_unique = np.unique(np.hstack((t_traj, t_probe[t_probe<=max(t_traj)])))
     t_traj_del = t_traj[np.invert(np.isin(t_traj, t_probe))]
     Xinterp = pd.DataFrame(X, index=t_traj, columns=['x','y','z'])
@@ -353,9 +482,9 @@ def SBG_signal(
     # Create a H5-file reader
     reader = H5Reader(path / 'flow_data.h5')
     # Read the time vector
-    t_traj = reader.getDataSet('flow/time')[:]
+    t_traj = reader.getDataSet('bubbles/time')[:]
     # Read the trajectory
-    X = reader.getDataSet('flow/trajectory')[:]
+    X = reader.getDataSet('bubbles/trajectory')[:]
     reader.close()
     # Duration of the time series
     duration = t_traj[-1] - t_traj[0]
@@ -363,15 +492,15 @@ def SBG_signal(
     n = len(t_traj)
 
     # Define some variables for easier use
-    Um = np.asarray(flow_properties['mean_velocity'])
+    um = np.asarray(flow_properties['mean_velocity'])
     C = flow_properties['void_fraction']
 
     # Get number of bubbles, bubble frequency and array with bubble size
     nb, F, b_size = get_bubble_size(flow_properties)
 
-    # Inter-arrival time (time between two particles)
+    # Inter-arrival time (time between two bubbles)
     # ASSUMPTION: equally spaced (in time) bubble distribution
-    # iat = 1.0/F - db/np.linalg.norm(Um)
+    # iat = 1.0/F - db/np.linalg.norm(um)
     iat = np.ones(nb)*1.0/F
     # Initialize arrival time (AT) vector
     AT = np.zeros(len(iat))
@@ -396,20 +525,27 @@ def SBG_signal(
     for sensor in probe['sensors']:
         # fill dictionary:  id -> relative_location
         sensor_delta[sensor['id']] = np.asarray(sensor['relative_location'])
+    # Get an estimate of the maximum probe dimension
+    sensors = probe['sensors']
+    minmax = np.array([[LARGENUMBER,LARGENEGNUMBER],
+                       [LARGENUMBER,LARGENEGNUMBER],
+                       [LARGENUMBER,LARGENEGNUMBER]])
+    for sensor in sensors:
+        for ii in range(0,3):
+            minmax[ii,0] = min(minmax[ii,0], sensor['relative_location'][ii])
+            minmax[ii,1] = max(minmax[ii,1], sensor['relative_location'][ii])
+    max_probe_size = max(minmax[:,1]-minmax[:,0])
+
     # The sampling frequency
     f_probe = probe['sampling_frequency']
     # Sampling time step
     dt_probe = 1.0 / f_probe
-    # Number of sensors on probe
+    # Number sampling time steps
     n_probe = round(duration / dt_probe) + 1;
     # Time vector
     t_probe = np.linspace(0, duration, n_probe);
-    # Create the H5-file writer
-    writer = H5Writer(path / 'binary_signal.h5', 'w')
     # Initialize signals to zero
-    writer.createDataSet('signal', (n_probe, n_sensors), 'u4')
-    # Write the time vector
-    writer.writeDataSet('time', t_probe, 'float64')
+    signal = np.zeros((n_probe, n_sensors)).astype('int')
     # Loop over all bubbles
     print('\nSampling the sensor signal')
     for kk in range(0,nb):
@@ -424,9 +560,11 @@ def SBG_signal(
         # shift with ~Uniform[-B/2,B/2]
         cz[kk] = X_b_AT[2] + random.uniform(-b_size[kk,2]/2.0,b_size[kk,2]/2.0)
         # Estimate timeframe for tracking the movement of bubble kk
-        critical_distance = 2.0*b_size[kk,0]/np.linalg.norm(Um)
-        t_min = AT[kk] - critical_distance
-        t_max = AT[kk] + critical_distance
+        critical_time_pre = 3.0*np.linalg.norm(b_size[kk,:])/np.linalg.norm(um)
+        critical_time_post = 3.0*(np.linalg.norm(b_size[kk,:]) + \
+                             max_probe_size)/np.linalg.norm(um)
+        t_min = AT[kk] - critical_time_pre
+        t_max = AT[kk] + critical_time_post
         # Get probe sampling times that lie within the estimated timeframe
         t_probe_kk = t_probe[(t_probe >= t_min) & (t_probe <= t_max)]
         # Check if number of samples lies inside the timeframe is larger than 0
@@ -440,34 +578,34 @@ def SBG_signal(
             # Resample the trajectory to the sampling times of the probe
             t_resampled, X_resampled = SBG_get_Signal_traj(t_traj_kk, \
                                 X_traj_kk, t_probe_kk)
-            # Initialize the signal array for this timeframe with 0 values
-            S = np.zeros((len(t_probe_kk),n_sensors))
             # Loop over all time steps within the timeframe
             abc = b_size[kk,:] / 2.0
-            for ii in range(0,len(t_probe_kk)):
-                # Loop over each sensor and check if it is inside the bubble
-                for idx,delta in sensor_delta.items():
-                    # Check if ellipsoid is pierced by sensor idx
-                    # Standard euqation: (x/a)2 + (y/b)2 + (z/c)2 = 1
-                    # with x = (cx+delta - x_bubble)
-                    radius = \
-                            (((cx[kk]+delta[0])-X_resampled[ii,0])/abc[0])**2 \
-                          + (((cy[kk]+delta[1])-X_resampled[ii,1])/abc[1])**2 \
-                          + (((cz[kk]+delta[2])-X_resampled[ii,2])/abc[2])**2
-                    if radius <= 1:
-                        # pierced, set signal to 1
-                        S[ii,idx] = 1;
-            # Determine the row in the .h5 file where to write the signal
+            # Determine the row in the signal time series where to write the signal
             row = np.where(t_probe == min(t_probe_kk))[0][0]
-            # Write the signal, then continue with the next bubble
-            writer.write2DataSet('signal', S, row=row, col=0)
+            # Loop over each sensor and check if it is inside the bubble
+            for idx,delta in sensor_delta.items():
+                # Check if ellipsoid is pierced by sensor idx
+                # Standard euqation: (x/a)2 + (y/b)2 + (z/c)2 = 1
+                # with x = (cx+delta - x_bubble)
+                radius = \
+                        (((cx[kk]+delta[0])-X_resampled[:,0])/abc[0])**2 \
+                      + (((cy[kk]+delta[1])-X_resampled[:,1])/abc[1])**2 \
+                      + (((cz[kk]+delta[2])-X_resampled[:,2])/abc[2])**2
+                # Check for which time steps the bubble is pierced
+                idxs = np.where(radius <= 1) + row
+                # pierced, set signal to 1
+                signal[idxs,idx] = 1;
             # Display progress
             if progress:
                 printProgressBar(kk + 1, nb, prefix = 'Progress:', suffix = 'Complete', length = 50)
+    # Create the H5-file writer
+    writer = H5Writer(path / 'binary_signal.h5', 'w')
+    # Write the time vector
+    writer.writeDataSet('time', t_probe, 'float64')
+    writer.writeDataSet('signal', signal, 'u4')
     ds_sig = writer.getDataSet('signal')
     ds_sig.attrs['sensor_id'] = list(sensor_delta.keys())
     writer.close()
-
     time2 = time.time()
     print(f'Successfully generated the signal')
     print(f'Finished in {time2-time1} seconds\n')

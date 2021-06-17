@@ -29,15 +29,14 @@ except ImportError:
     TestRunner Class Executing and Evalulating Tests
 """
 
-MAINPATH=pathlib.Path().cwd().parents[0]
-
 class TestRunner:
 
     tests = []  # type: typing.List[pathlib.Path]
     timings = []  # type: typing.List[float]
 
     def __init__(self, config):
-        self.visualize = config['visualize']
+        self.velocity_tsa = config['velocity_tsa']
+        self.bin = config['bin']
         self.tests = []  # type: typing.List[str]
 
 
@@ -241,13 +240,13 @@ class TestRunner:
         # create simulation call
         cmd = [
             "python",
-            "sbg.py"
+            str(pathlib.Path(self.bin) / "sbg.py")
         ]
-        if self.visualize:
-            cmd.append("-v")
         cmd.append("-r")
         cmd.append(testDef['SBG'])
-        cmd.append(testDirectory / "run")
+        if self.velocity_tsa:
+            cmd.append("-tsa")
+        cmd.append(".")
         return self.runCommon(cmd, testDirectory, "a")
 
     def runRA(self, testDirectory: pathlib.Path):
@@ -261,10 +260,16 @@ class TestRunner:
         if not runfile.exists():
             PRINTERRORANDEXIT("runfile <" + str(runfile) + "> does not exists")
         # create simulation call
+        # get a velocity estimate
+        config = json.loads((runfile).read_bytes())
+        vel = np.asarray(config["FLOW_PROPERTIES"]["mean_velocity"])
+        mag_vel = np.sqrt(vel.dot(vel))
         cmd = [
             "python",
-            "mssrc.py",
-            testDirectory / "run"
+            str(pathlib.Path(self.bin) / "mssrc.py"),
+            "-vel",
+            str(mag_vel),
+            "."
         ]
         return self.runCommon(cmd, testDirectory, "a")
 
@@ -282,11 +287,28 @@ class TestRunner:
         # create simulation call
         cmd = [
             "python",
-            "evaluate.py",
-            testDirectory / "run"
+            str(pathlib.Path(self.bin) / "evaluate.py"),
+            "."
         ]
         return self.runCommon(cmd, testDirectory, "a")
 
+    def runTSA(self, testDirectory: pathlib.Path):
+        """
+        run given simulation in given directory
+        """
+        PRINTTITLE(" running evalutation in %s " % str(testDirectory), "-")
+        # get the filename of the runfile
+        runfile = testDirectory / "run" / "config.json"
+        # check for runfile
+        if not runfile.exists():
+            PRINTERRORANDEXIT("runfile <" + str(runfile) + "> does not exists")
+        # create simulation call
+        cmd = [
+            "python",
+            str(pathlib.Path(self.bin) / "velcoity_tsa.py"),
+            "."
+        ]
+        return self.runCommon(cmd, testDirectory, "a")
 
     def runCommon(
         self, cmd: typing.List[str], testDirectory: pathlib.Path, fileAccess="w"
@@ -295,7 +317,7 @@ class TestRunner:
         success = 0
         startingTime = time.time()
         try:
-            out = run_process(cmd, pathlib.Path.cwd()).stdout
+            out = run_process(cmd, testDirectory / "run").stdout
             success = 1
         except subprocess.CalledProcessError as error:
             out = error.stdout

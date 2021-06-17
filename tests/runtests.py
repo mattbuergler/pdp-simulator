@@ -69,14 +69,21 @@ if __name__ != "main":
     parser.add_argument(
         "-r", "--run", action="store_true", help="run the tests"
     )
-    parser.add_argument('-v', '--visualize', action='store_true',
+    parser.add_argument(
+        "-b", "--bin",
+        metavar="bin",
+        type=str,
+        default=str(pathlib.Path(__file__).resolve().parent.parent),
+        help="diretories that contain the functions (e.g. sbg.py, mssrc.py, etc.)",
+    )
+    parser.add_argument('-tsa', '--velocity_tsa', action='store_true',
         help="Vizualize the results.", default=False)
     args = vars(parser.parse_args())
-
     start_time = time.time()
     errors = 0
     config = {}
-    config['visualize'] = args["visualize"]
+    config['velocity_tsa'] = args["velocity_tsa"]
+    config['bin'] = args["bin"]
 
     runner = TestRunner(config)
     # and the tests

@@ -6,8 +6,15 @@
   [
     {
       "file": "flow_data.h5",
-      "dataset" : "flow/velocity",
-      "tag": "compare velocity time series",
+      "dataset" : "fluid/velocity",
+      "tag": "compare fluid velocity time series",
+      "rel": 1e-6,
+      "abs": 1e-6
+    },
+    {
+      "file": "flow_data.h5",
+      "dataset" : "bubbles/velocity",
+      "tag": "compare bubble velocity time series",
       "rel": 1e-6,
       "abs": 1e-6
     },

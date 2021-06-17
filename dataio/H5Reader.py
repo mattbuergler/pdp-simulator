@@ -19,7 +19,7 @@ class H5Reader(H5Base):
         if fname.is_file():
             super(H5Reader, self).__init__(fname, 'r')
         else:
-            PRINTERRORANDEXIT(f"file <{fname}> does not exist");
+            PRINTERRORANDEXIT(f"file <{fname}> does not exist")
 
 
     def getDataSets(self):
@@ -27,7 +27,7 @@ class H5Reader(H5Base):
 
     def getDataSet(self, path):
         if not self.existDataset(path):
-            PRINTERRORANDEXIT(f'dataset <{path}> does not exist');
+            PRINTERRORANDEXIT(f'dataset <{path}> does not exist')
         else:
-            ds = self.getF5()[path];
+            ds = self.getF5()[path]
         return ds
