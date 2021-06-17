@@ -373,11 +373,9 @@ def main():
 
     print('\nSaving results....\n')
     # Generate a reconstructed velocity time-series from individual
-    # Initialize bubble velocities, weighted mean velocity and
-    # Reynolds stress tensor
+    # Initialize bubble velocities, weighted mean velocity
     velocity_reconst = np.empty((len(bubbles_complete),3))
     weighted_mean_velocity_reconst = np.empty(3)
-    reynolds_stress_reconst = np.empty((len(bubbles_complete),3,3))
     time_reconst = np.empty((len(bubbles_complete),2))
     # Collect bubble properties, such as diameter
     bubble_diam_reconst = np.empty((len(bubbles_complete),2))
@@ -398,26 +396,13 @@ def main():
     weighted_mean_velocity_reconst[2] = np.sum(velocity_reconst[:,2] \
                                     * (time_reconst[:,1]-time_reconst[:,0]),axis=0) \
                                     / np.sum(time_reconst[:,1]-time_reconst[:,0],axis=0)
-    mean_velocity_reconst = velocity_reconst.mean(axis=0)
-    for ii in range(0,len(velocity_reconst)):
-        velocity_fluctuations = velocity_reconst[ii,:]-mean_velocity_reconst
-        reynolds_stress_reconst[ii,:,:] = np.outer(velocity_fluctuations, \
-                                    velocity_fluctuations)
-    mean_reynolds_stress = reynolds_stress_reconst.mean(axis=0)
-    turbulent_intensity = np.sqrt(np.array([
-            mean_reynolds_stress[0,0], \
-            mean_reynolds_stress[1,1], \
-            mean_reynolds_stress[2,2], \
-            ])) / mean_velocity_reconst[0]
-
-    # Calculate the statistics
     # Calculate mean velocity
     mean_velocity_reconst = velocity_reconst.mean(axis=0)
     # Initialize the reynolds stress tensors time series
     reynolds_stress = np.empty((len(velocity_reconst),3,3))
     for ii in range(0,len(velocity_reconst)):
         # Calculate velocity fluctuations
-        velocity_fluct_reconst = velocity_reconst[ii,:]-mean_velocity_reconst
+        velocity_fluct_reconst = velocity_reconst[ii,:] - mean_velocity_reconst
         # Reynolds stresses as outer product of fluctuations
         reynolds_stress[ii,:,:] = np.outer(velocity_fluct_reconst, \
                                     velocity_fluct_reconst)
@@ -428,7 +413,7 @@ def main():
             mean_reynolds_stress[0,0], \
             mean_reynolds_stress[1,1], \
             mean_reynolds_stress[2,2], \
-            ])) /  np.sqrt(mean_velocity_reconst.dot(mean_velocity_reconst))
+            ])) / np.sqrt(mean_velocity_reconst.dot(mean_velocity_reconst))
     # Create the H5-file writer
     writer = H5Writer(path / 'reconstructed.h5', 'w')
     # Create the velocity data set

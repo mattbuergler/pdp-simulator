@@ -19,9 +19,9 @@ class H5Writer(H5Base):
 
     def getDataSet(self, path):
         if not self.existDataset(path):
-            PRINTERRORANDEXIT(f'dataset <{path}> does not exist');
+            PRINTERRORANDEXIT(f'dataset <{path}> does not exist')
         else:
-            ds = self.getF5()[path];
+            ds = self.getF5()[path]
         return ds
 
     def createDataSet(self, path, dims, dtype):

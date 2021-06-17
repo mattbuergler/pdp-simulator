@@ -29,8 +29,6 @@ except ImportError:
     TestRunner Class Executing and Evalulating Tests
 """
 
-MAINPATH=pathlib.Path().cwd().parents[0]
-
 class TestRunner:
 
     tests = []  # type: typing.List[pathlib.Path]
@@ -38,6 +36,7 @@ class TestRunner:
 
     def __init__(self, config):
         self.velocity_tsa = config['velocity_tsa']
+        self.bin = config['bin']
         self.tests = []  # type: typing.List[str]
 
 
@@ -241,13 +240,13 @@ class TestRunner:
         # create simulation call
         cmd = [
             "python",
-            "sbg.py"
+            str(pathlib.Path(self.bin) / "sbg.py")
         ]
-        if self.velocity_tsa:
-            cmd.append("-tsa")
         cmd.append("-r")
         cmd.append(testDef['SBG'])
-        cmd.append(testDirectory / "run")
+        if self.velocity_tsa:
+            cmd.append("-tsa")
+        cmd.append(".")
         return self.runCommon(cmd, testDirectory, "a")
 
     def runRA(self, testDirectory: pathlib.Path):
@@ -267,10 +266,10 @@ class TestRunner:
         mag_vel = np.sqrt(vel.dot(vel))
         cmd = [
             "python",
-            "mssrc.py",
+            str(pathlib.Path(self.bin) / "mssrc.py"),
             "-vel",
             str(mag_vel),
-            testDirectory / "run"
+            "."
         ]
         return self.runCommon(cmd, testDirectory, "a")
 
@@ -288,8 +287,8 @@ class TestRunner:
         # create simulation call
         cmd = [
             "python",
-            "evaluate.py",
-            testDirectory / "run"
+            str(pathlib.Path(self.bin) / "evaluate.py"),
+            testDirectory / "."
         ]
         return self.runCommon(cmd, testDirectory, "a")
 
@@ -306,8 +305,8 @@ class TestRunner:
         # create simulation call
         cmd = [
             "python",
-            str(MAINPATH / "velcoity_tsa.py"),
-            '.'
+            str(pathlib.Path(self.bin) / "velcoity_tsa.py"),
+            testDirectory / "."
         ]
         return self.runCommon(cmd, testDirectory, "a")
 
@@ -318,7 +317,7 @@ class TestRunner:
         success = 0
         startingTime = time.time()
         try:
-            out = run_process(cmd, pathlib.Path.cwd()).stdout
+            out = run_process(cmd, testDirectory / "run").stdout
             success = 1
         except subprocess.CalledProcessError as error:
             out = error.stdout

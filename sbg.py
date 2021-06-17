@@ -95,5 +95,5 @@ def main():
     if args.velocity_tsa:
         velocity_tsa.main(str(path))
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
