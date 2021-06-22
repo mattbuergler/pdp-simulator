@@ -50,5 +50,8 @@
             }
         ]
     },
+    "RECONSTRUCTION": {
+        "type": "Shen_et_al_2014"
+    },
     "REPRODUCIBLE": "yes"
 }
