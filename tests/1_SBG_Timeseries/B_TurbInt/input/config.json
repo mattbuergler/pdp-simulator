@@ -50,7 +50,7 @@
         ]
     },
     "RECONSTRUCTION": {
-        "type": "Shen_et_al_2014"
+        "type": "Shen_Nakamura_2014"
     },
     "REPRODUCIBLE": "yes"
 }
