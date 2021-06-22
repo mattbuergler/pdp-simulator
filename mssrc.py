@@ -5,6 +5,7 @@ import argparse
 import pathlib
 import json
 import jsonschema
+import math
 import numpy as np
 from numpy import linalg
 import pandas as pd
@@ -374,7 +375,66 @@ def main():
         elif ra_type == "Tian_et_al_2015":
             # Reconstruction algorithm of Tian et al. (2015)
             # https://doi.org/10.1016/j.pnucene.2014.08.005
-            print(ra_type)
+
+            # Time differences between sensors 0 and k for interfaces 2h (front
+            # hemisphere) and 2h+1 (back hemisphere)
+            delta_t_0k_2h = {}
+            delta_t_0k_2hp1 = {}
+            delta_t_0k_mean = {}
+            # Time differences k=1,2,3,4 for interfaces 2h and 2h+1
+            delta_t_k_h = {}
+            delta_t_k_h[0] = ifd_times['t_2h+1'][0] - ifd_times['t_2h'][0]
+
+            # 1. Reconstruct instantaneous local velocity
+            D0 = []
+            D1 = []
+            D2 = []
+            D3 = []
+            for k in aux_sensor_ids:
+                # Time differences
+                delta_t_0k_2h[k] = ifd_times['t_2h'][k] \
+                                 - ifd_times['t_2h'][0]
+                delta_t_0k_2hp1[k] = ifd_times['t_2h+1'][k] \
+                                   - ifd_times['t_2h+1'][0]
+                delta_t_k_h[k] = ifd_times['t_2h+1'][k] \
+                               - ifd_times['t_2h'][k]
+                # Mean time difference
+                delta_t_0k_mean[k] = (delta_t_0k_2h[k] + delta_t_0k_2hp1[k])/2.0
+                # Fill the matrices given in Eq. (17) in Tian et al. (2015)
+                D0.append(np.array([S_0k[k][0], S_0k[k][1], S_0k[k][2]]))
+                D1.append(np.array([delta_t_0k_mean[k], S_0k[k][1], S_0k[k][2]]))
+                D2.append(np.array([S_0k[k][0], delta_t_0k_mean[k], S_0k[k][2]]))
+                D3.append(np.array([S_0k[k][0], S_0k[k][1], delta_t_0k_mean[k]]))
+
+            # Calculate matrix determinants
+            # Eq. (17) in Tian et al. (2015)
+            D0_det = linalg.det(D0)
+            D1_det = linalg.det(D1)
+            D2_det = linalg.det(D2)
+            D3_det = linalg.det(D3)
+
+            # Calculate instantaneous velocity magnitude and components
+            # Eq. (16) from Tian et al. (2015)
+            V =  np.sqrt((D0_det**2)/(D1_det**2 + D2_det**2 + D3_det**2))
+            # Eq. (16) from Tian et al. (2015)
+            alpha = math.acos(max(min(V * D3_det / D0_det,1.0),-1.0))
+            sin_beta = D2_det / (D0_det * math.sin(alpha))
+            beta = math.asin(sin_beta)
+            # if (sin_beta >= 0):
+            #     beta = math.acos(max(min(V * D1_det / D0_det,1.0),-1.0))
+            # else:
+            #     beta = 2*math.pi - math.acos(max(min(V * D1_det / D0_det,1.0),-1.0))
+            V_bh_x = V * math.sin(alpha) * math.cos(beta)
+            V_bh_y = V * math.sin(alpha) * math.sin(beta)
+            V_bh_z = V * math.cos(alpha)
+            # V_bh_x = V * V * D1_det / D0_det
+            # V_bh_y = V * V * D2_det / D0_det
+            # V_bh_z = V * V * D3_det / D0_det
+            D_h_2h = math.nan
+            D_h_2hp1 = math.nan
+            cos_eta_i_2h = math.nan
+            cos_eta_i_2hp1 = math.nan
+            iac = math.nan
         else:
             PRINTERRORANDEXIT(f'Reconstruction algorithm <{ra_type}> not found.')
 
