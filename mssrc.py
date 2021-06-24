@@ -133,7 +133,7 @@ def main():
     # Create a H5-file reader
     reader = H5Reader(path / 'binary_signal.h5')
     # Read the time vector
-    t_signal_str = np.around(reader.getDataSet('time')[:],decimals=13).astype(str)
+    t_signal_str = (reader.getDataSet('time')[:]).astype(str)
     t_signal = reader.getDataSet('time')[:]
     # Read the signal time series
     ds_signal = reader.getDataSet('signal')
