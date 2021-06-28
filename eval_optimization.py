@@ -29,7 +29,7 @@ def inverse_den(x):
 path = pathlib.Path().cwd() / 'optimization/geometry'
 path_out = pathlib.Path().cwd() / 'optimization/geometry/results'
 
-geometries = ['geom1','geom2','geom3']
+geometries = ['geom1','geom2','geom3','geom4']
 #runs = ['001','002','003','004']
 runs = ['001','002','003','004','005','006','007','008']
 
@@ -38,7 +38,7 @@ ux = {}
 for geom in geometries:
     for run in runs:
         error_tmp = {}
-        p = path / geom / run 
+        p = path / geom / run / 'run'
         u = pd.read_csv(p / 'error_summary_velocity.csv', index_col=0)
         d = pd.read_csv(p / 'error_summary_bubble_size.csv', index_col=0)
         rs = pd.read_csv(p / 'error_reynolds_stresses.csv', index_col=0)
@@ -82,8 +82,8 @@ cmap = matplotlib.cm.get_cmap('viridis')
 markers = ['^','o','s','*','<','>']
 colors = ['r','g','b']
 N = 3
-labels = {'geom1':'Probe1','geom2':'Probe2','geom3':'Probe3'}
-geometries = ['geom1','geom2','geom3']
+labels = {'geom1':'Probe1','geom2':'Probe2','geom3':'Probe3','geom4':'Probe4'}
+geometries = ['geom1','geom2','geom3','geom3']
 runs = ['001','002','003','004']
 
 # Plot errors as function of sampling frequency
