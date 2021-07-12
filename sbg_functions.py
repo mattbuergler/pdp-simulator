@@ -322,7 +322,7 @@ def SBG_fluid_velocity(path, flow_properties, reproducible, progress):
     writer.writeDataSet('fluid/reynold_stresses', \
         mean_reynolds_stress, 'float64')
     writer.writeDataSet('fluid/turbulent_intensity', \
-        mean_reynolds_stress, 'float64')
+        turbulent_intensity, 'float64')
     flow_props = str(flow_properties)
     writer.writeStringDataSet('.flow_properties', flow_props)
     writer.close()

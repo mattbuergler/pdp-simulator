@@ -83,7 +83,7 @@ markers = ['^','o','s','*','<','>']
 colors = ['r','g','b']
 N = 3
 labels = {'geom1':'Probe1','geom2':'Probe2','geom3':'Probe3','geom4':'Probe4'}
-geometries = ['geom1','geom2','geom3','geom3']
+geometries = ['geom1','geom2','geom3','geom4']
 runs = ['001','002','003','004']
 
 # Plot errors as function of sampling frequency

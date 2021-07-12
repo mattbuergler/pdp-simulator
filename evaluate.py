@@ -57,6 +57,12 @@ def main():
     reader = H5Reader(path / 'flow_data.h5')
     # Read the 'true' continuous phase velocity time series
     vel_true_fluid = reader.getDataSet('fluid/velocity')[:]
+    # Read the mean velocity
+    vel_mean_true_fluid = reader.getDataSet('fluid/mean_velocity')[:]
+    # Read the Reynolds stresses
+    rs_true_fluid = reader.getDataSet('fluid/reynold_stresses')[:]
+    # Read the turbulent intensity
+    Ti_true_fluid = reader.getDataSet('fluid/turbulent_intensity')[:]
     # Read the 'true' velocity time series
     vel_true = reader.getDataSet('bubbles/velocity')[:]
     # Read the mean velocity
@@ -149,7 +155,6 @@ def main():
     # Convergence of mean error with number of bubbles
     for ii in range(0,len(AE_vel)):
         cumulative_mean_AE[ii,:] = AE_vel.iloc[:ii].mean()
-
 
     # Calculate error for bubble size
     b_size = pd.DataFrame(b_size,index=t_b_size, columns=['A','B','C'])
@@ -272,6 +277,113 @@ def main():
     rel_error_Ti.to_csv(path / 'rel_error_turbulent_intensity.csv', index=True)
     rel_error_Ti_bubble.to_csv(path / 'rel_error_turbulent_intensity_bubble.csv', index=True)
 
+    # Check convergence of Reynolds
+    # Calculate mean velocity
+    mean_vel_rec = vel_rec.mean(axis=0)
+    mean_reynolds_stress = np.empty((len(vel_rec),3,3))
+    for ii in range(0,len(vel_rec)):
+        reynolds_stress = np.empty((ii+1,3,3))
+        for jj in range(0,ii+1):
+            # Calculate velocity fluctuations
+            vel_rec_fluct = vel_rec[jj,:] - mean_vel_rec
+            # Reynolds stresses as outer product of fluctuations
+            reynolds_stress[jj,:,:] = np.outer(vel_rec_fluct, \
+                                    vel_rec_fluct)
+        # Calculate mean Reynolds stresses
+        mean_reynolds_stress[ii,:,:] = reynolds_stress.mean(axis=0)
+
+    # Calculate mean velocity
+    mean_vel_true = vel_true_bubble.mean(axis=0)
+    mean_reynolds_stress_true = np.empty((len(vel_true_bubble),3,3))
+    for ii in range(0,len(vel_true_bubble)):
+        reynolds_stress_true = np.empty((ii+1,3,3))
+        for jj in range(0,ii+1):
+            # Calculate velocity fluctuations
+            vel_true_fluct = vel_true_bubble[jj,:] - mean_vel_true
+            # Reynolds stresses as outer product of fluctuations
+            reynolds_stress_true[jj,:,:] = np.outer(vel_true_fluct, \
+                                    vel_true_fluct)
+        # Calculate mean Reynolds stresses
+        mean_reynolds_stress_true[ii,:,:] = reynolds_stress_true.mean(axis=0)
+
+    # Compare input / output
+    overview = pd.DataFrame(columns=['config','CP','DP','DP_bubble','DP_reconstructed'], \
+                            index=['Ux','Uy','Uz','Tau_xx','Tau_yy','Tau_zz','Tau_xy','Tau_xz','Tau_yz','T_Ix','T_Iy','T_Iz'])
+    # Configuration file
+    fp_vel = np.asarray(fp_vel)
+    fp_ti = np.asarray(fp_ti)
+    overview['config']['Ux'] = fp_vel[0]
+    overview['config']['Uy'] = fp_vel[1]
+    overview['config']['Uz'] = fp_vel[2]
+    overview['config']['Tau_xx'] = (fp_vel[0]*fp_ti[0])*(fp_vel[0]*fp_ti[0])
+    overview['config']['Tau_yy'] = (fp_vel[0]*fp_ti[1])*(fp_vel[0]*fp_ti[1])
+    overview['config']['Tau_zz'] = (fp_vel[0]*fp_ti[2])*(fp_vel[0]*fp_ti[2])
+    overview['config']['Tau_xy'] = np.nan
+    overview['config']['Tau_xz'] = np.nan
+    overview['config']['Tau_yz'] = np.nan
+    if fp_vel[1] == 0.0:
+        overview['config']['Tau_xy'] = 0.0
+        overview['config']['Tau_yz'] = 0.0
+    if fp_vel[2] == 0.0:
+        overview['config']['Tau_xz'] = 0.0
+        overview['config']['Tau_yz'] = 0.0
+    overview['config']['T_Ix'] = fp_ti[0]*math.sqrt(fp_vel.dot(fp_vel))
+    overview['config']['T_Iy'] = fp_ti[1]*math.sqrt(fp_vel.dot(fp_vel))
+    overview['config']['T_Iz'] = fp_ti[2]*math.sqrt(fp_vel.dot(fp_vel))
+    # Continuous phase time series
+    overview['CP']['Ux'] = vel_mean_true_fluid[0]
+    overview['CP']['Uy'] = vel_mean_true_fluid[1]
+    overview['CP']['Uz'] = vel_mean_true_fluid[2]
+    overview['CP']['Tau_xx'] = rs_true_fluid[0,0]
+    overview['CP']['Tau_yy'] = rs_true_fluid[1,1]
+    overview['CP']['Tau_zz'] = rs_true_fluid[2,2]
+    overview['CP']['Tau_xy'] = rs_true_fluid[0,1]
+    overview['CP']['Tau_xz'] = rs_true_fluid[0,2]
+    overview['CP']['Tau_yz'] = rs_true_fluid[1,2]
+    overview['CP']['T_Ix'] = Ti_true_fluid[0]
+    overview['CP']['T_Iy'] = Ti_true_fluid[1]
+    overview['CP']['T_Iz'] = Ti_true_fluid[2]
+    # Dispersed phase time series (full time series)
+    overview['DP']['Ux'] = vel_mean_true[0]
+    overview['DP']['Uy'] = vel_mean_true[1]
+    overview['DP']['Uz'] = vel_mean_true[2]
+    overview['DP']['Tau_xx'] = rs_true[0,0]
+    overview['DP']['Tau_yy'] = rs_true[1,1]
+    overview['DP']['Tau_zz'] = rs_true[2,2]
+    overview['DP']['Tau_xy'] = rs_true[0,1]
+    overview['DP']['Tau_xz'] = rs_true[0,2]
+    overview['DP']['Tau_yz'] = rs_true[1,2]
+    overview['DP']['T_Ix'] = Ti_true[0]
+    overview['DP']['T_Iy'] = Ti_true[1]
+    overview['DP']['T_Iz'] = Ti_true[2]
+    # Dispersed phase time series (only bubbles-probe interations
+    overview['DP_bubble']['Ux'] = mean_vel_true_bubble[0]
+    overview['DP_bubble']['Uy'] = mean_vel_true_bubble[1]
+    overview['DP_bubble']['Uz'] = mean_vel_true_bubble[2]
+    overview['DP_bubble']['Tau_xx'] = mean_rs_true_bubble[0,0]
+    overview['DP_bubble']['Tau_yy'] = mean_rs_true_bubble[1,1]
+    overview['DP_bubble']['Tau_zz'] = mean_rs_true_bubble[2,2]
+    overview['DP_bubble']['Tau_xy'] = mean_rs_true_bubble[0,1]
+    overview['DP_bubble']['Tau_xz'] = mean_rs_true_bubble[0,2]
+    overview['DP_bubble']['Tau_yz'] = mean_rs_true_bubble[1,2]
+    overview['DP_bubble']['T_Ix'] = turbulent_intensity_bubble[0]
+    overview['DP_bubble']['T_Iy'] = turbulent_intensity_bubble[1]
+    overview['DP_bubble']['T_Iz'] = turbulent_intensity_bubble[2]
+    # Dispersed phase time series (reconstructed)
+    overview['DP_reconstructed']['Ux'] = vel_mean_rec[0]
+    overview['DP_reconstructed']['Uy'] = vel_mean_rec[1]
+    overview['DP_reconstructed']['Uz'] = vel_mean_rec[2]
+    overview['DP_reconstructed']['Tau_xx'] = rs_rec[0,0]
+    overview['DP_reconstructed']['Tau_yy'] = rs_rec[1,1]
+    overview['DP_reconstructed']['Tau_zz'] = rs_rec[2,2]
+    overview['DP_reconstructed']['Tau_xy'] = rs_rec[0,1]
+    overview['DP_reconstructed']['Tau_xz'] = rs_rec[0,2]
+    overview['DP_reconstructed']['Tau_yz'] = rs_rec[1,2]
+    overview['DP_reconstructed']['T_Ix'] = Ti_rec[0]
+    overview['DP_reconstructed']['T_Iy'] = Ti_rec[1]
+    overview['DP_reconstructed']['T_Iz'] = Ti_rec[2]
+    overview.to_csv(path / 'overview.csv')
+
     # Write number of bubbles
     file1 = open(path / "n_bubbles.txt","w")
     file1.write(f"Input: {len(t_b_size)}\n")
@@ -317,34 +429,6 @@ def main():
     plt.tight_layout()
     fig.savefig(path / 'velocity_05s.svg',dpi=300)
 
-    np.random.seed(42)
-    n = 9
-    bubbles = np.random.uniform(low=0, high=len(t_rec), size=n)
-    delta_t=0.001
-    fig, axs = plt.subplots(int(math.sqrt(n)),int(math.sqrt(n)),figsize=(6,6))
-    axs=axs.reshape(-1)
-    for ii,bubble in enumerate(bubbles):
-        bid = int(bubble)
-        axs[ii].plot(t_true,vel_true[:,0],color='k',lw=1, label='true velocity')
-        axs[ii].hlines(vel_rec[bid,0],t_rec[bid,0],t_rec[bid,1], \
-                    color='b',label='reconstr. velocity',zorder=100)
-        axs[ii].set_xlim([t_rec[bid,0]-delta_t,t_rec[bid,1]+delta_t])
-        axs[ii].set_ylim([0.9*min(vel_true[:,0][(t_true>t_rec[bid,0]) \
-                                         & (t_true<t_rec[bid,1])]), \
-                          1.1*max(vel_true[:,0][(t_true>t_rec[bid,0]) \
-                                         &(t_true<t_rec[bid,1])])])
-        axs[ii].axvspan(t_rec[bid,0], t_rec[bid,1], alpha=0.5, \
-                    color='r',label='bubble-probe interaction',zorder=10)
-        if (ii == n-int(math.sqrt(n))):
-            axs[ii].legend(loc=4,bbox_to_anchor=(4,-0.8),ncol=3)
-        if (ii % int(math.sqrt(n)) == 0):
-            axs[ii].set_ylabel('Velocity [m/s]')
-        if (ii >= n-int(math.sqrt(n))):
-            axs[ii].set_xlabel('Time [s]')
-    plt.subplots_adjust(left=0.1, bottom=0.2, right=0.95, top=0.95, \
-                        wspace=0.4, hspace=0.3)
-    #plt.tight_layout()
-    fig.savefig(path / 'velocity_variation.svg',dpi=300)
 
     fig, axs = plt.subplots(3,figsize=(6,4))
     axs[0].plot(np.linspace(1,len(cumulative_mean_AE),len(cumulative_mean_AE)),cumulative_mean_AE[:,0],color='k',lw=lw)
@@ -354,20 +438,101 @@ def main():
     axs[1].set_ylabel('MAE $u_y$ [m/s]')
     axs[2].set_ylabel('MAE $u_z$ [m/s]')
     axs[2].set_xlabel('number of bubbles [-]')
-    # lim = [[fp_vel[0] - 1.2*max(abs(vel_true[:,0]-fp_vel[0])),
-    #         fp_vel[0] + 1.2*max(abs(vel_true[:,0]-fp_vel[0]))],
-    #        [fp_vel[1] - 1.2*max(abs(vel_true[:,1]-fp_vel[1])),
-    #         fp_vel[1] + 1.2*max(abs(vel_true[:,1]-fp_vel[1]))],
-    #        [fp_vel[2] - 1.2*max(abs(vel_true[:,2]-fp_vel[2])),
-    #         fp_vel[2] + 1.2*max(abs(vel_true[:,2]-fp_vel[2]))]]
-    # axs[0].set_ylim([lim[0][0],lim[0][1]])
-    # axs[1].set_ylim([lim[1][0],lim[1][1]])
-    # axs[2].set_ylim([lim[2][0],lim[2][1]])
-    # axs[0].set_xlim([fp_dur/2.0,fp_dur/2.0+0.1])
-    # axs[1].set_xlim([fp_dur/2.0,fp_dur/2.0+0.1])
-    # axs[2].set_xlim([fp_dur/2.0,fp_dur/2.0+0.1])
     plt.tight_layout()
     fig.savefig(path / 'AE_convergence.svg',dpi=300)
+
+    fig, axs = plt.subplots(6,figsize=(6,6))
+    axs[0].plot(np.linspace(1,len(mean_reynolds_stress),len(mean_reynolds_stress)),(mean_reynolds_stress[:,0,0]),color='r',lw=1,label='mean')
+    axs[1].plot(np.linspace(1,len(mean_reynolds_stress),len(mean_reynolds_stress)),(mean_reynolds_stress[:,1,1]),color='r',lw=1)
+    axs[2].plot(np.linspace(1,len(mean_reynolds_stress),len(mean_reynolds_stress)),(mean_reynolds_stress[:,2,2]),color='r',lw=1)
+    axs[3].plot(np.linspace(1,len(mean_reynolds_stress),len(mean_reynolds_stress)),(mean_reynolds_stress[:,0,1]),color='r',lw=1)
+    axs[4].plot(np.linspace(1,len(mean_reynolds_stress),len(mean_reynolds_stress)),(mean_reynolds_stress[:,0,2]),color='r',lw=1)
+    axs[5].plot(np.linspace(1,len(mean_reynolds_stress),len(mean_reynolds_stress)),(mean_reynolds_stress[:,1,2]),color='r',lw=1)
+    axs[0].set_ylabel(r'$\tau_{xx}$ [m$^2$/s$^2$]')
+    axs[1].set_ylabel(r'$\tau_{yy}$ [m$^2$/s$^2$]')
+    axs[2].set_ylabel(r'$\tau_{zz}$ [m$^2$/s$^2$]')
+    axs[3].set_ylabel(r'$\tau_{xy}$ [m$^2$/s$^2$]')
+    axs[4].set_ylabel(r'$\tau_{xz}$ [m$^2$/s$^2$]')
+    axs[5].set_ylabel(r'$\tau_{yz}$ [m$^2$/s$^2$]')
+    axs[5].set_xlabel('number of bubbles [-]')
+    axs[0].set_ylim([10**math.floor(np.log10(min(mean_reynolds_stress[:,0,0]))),10**math.ceil(np.log10(max(mean_reynolds_stress[:,0,0])))])
+    axs[1].set_ylim([10**math.floor(np.log10(min(mean_reynolds_stress[:,1,1]))),10**math.ceil(np.log10(max(mean_reynolds_stress[:,1,1])))])
+    axs[2].set_ylim([10**math.floor(np.log10(min(mean_reynolds_stress[:,2,2]))),10**math.ceil(np.log10(max(mean_reynolds_stress[:,2,2])))])
+    axs[3].set_ylim([-max(abs(mean_reynolds_stress[:,0,1])),max(abs(mean_reynolds_stress[:,0,1]))])
+    axs[4].set_ylim([-max(abs(mean_reynolds_stress[:,0,2])),max(abs(mean_reynolds_stress[:,0,2]))])
+    axs[5].set_ylim([-max(abs(mean_reynolds_stress[:,1,2])),max(abs(mean_reynolds_stress[:,1,2]))])
+    axs[0].set_yscale('log')
+    axs[1].set_yscale('log')
+    axs[2].set_yscale('log')
+    axs[0].legend()
+    plt.tight_layout()
+    fig.savefig(path / 'RST_mean_convergence.svg',dpi=300)
+
+    fig, axs = plt.subplots(6,figsize=(6,6))
+    axs[0].plot(np.linspace(1,len(reynolds_stress),len(reynolds_stress)),(reynolds_stress[:,0,0]),color='k',lw=lw,label='inst.')
+    axs[1].plot(np.linspace(1,len(reynolds_stress),len(reynolds_stress)),(reynolds_stress[:,1,1]),color='k',lw=lw)
+    axs[2].plot(np.linspace(1,len(reynolds_stress),len(reynolds_stress)),(reynolds_stress[:,2,2]),color='k',lw=lw)
+    axs[3].plot(np.linspace(1,len(reynolds_stress),len(reynolds_stress)),(reynolds_stress[:,0,1]),color='k',lw=lw)
+    axs[4].plot(np.linspace(1,len(reynolds_stress),len(reynolds_stress)),(reynolds_stress[:,0,2]),color='k',lw=lw)
+    axs[5].plot(np.linspace(1,len(reynolds_stress),len(reynolds_stress)),(reynolds_stress[:,1,2]),color='k',lw=lw)
+    axs[0].plot(np.linspace(1,len(mean_reynolds_stress),len(mean_reynolds_stress)),(mean_reynolds_stress[:,0,0]),color='r',lw=1,label='mean')
+    axs[1].plot(np.linspace(1,len(mean_reynolds_stress),len(mean_reynolds_stress)),(mean_reynolds_stress[:,1,1]),color='r',lw=1)
+    axs[2].plot(np.linspace(1,len(mean_reynolds_stress),len(mean_reynolds_stress)),(mean_reynolds_stress[:,2,2]),color='r',lw=1)
+    axs[3].plot(np.linspace(1,len(mean_reynolds_stress),len(mean_reynolds_stress)),(mean_reynolds_stress[:,0,1]),color='r',lw=1)
+    axs[4].plot(np.linspace(1,len(mean_reynolds_stress),len(mean_reynolds_stress)),(mean_reynolds_stress[:,0,2]),color='r',lw=1)
+    axs[5].plot(np.linspace(1,len(mean_reynolds_stress),len(mean_reynolds_stress)),(mean_reynolds_stress[:,1,2]),color='r',lw=1)
+    axs[0].set_ylabel(r'$\tau_{xx}$ [m$^2$/s$^2$]')
+    axs[1].set_ylabel(r'$\tau_{yy}$ [m$^2$/s$^2$]')
+    axs[2].set_ylabel(r'$\tau_{zz}$ [m$^2$/s$^2$]')
+    axs[3].set_ylabel(r'$\tau_{xy}$ [m$^2$/s$^2$]')
+    axs[4].set_ylabel(r'$\tau_{xz}$ [m$^2$/s$^2$]')
+    axs[5].set_ylabel(r'$\tau_{yz}$ [m$^2$/s$^2$]')
+    axs[5].set_xlabel('number of bubbles [-]')
+    axs[0].set_ylim([10**math.floor(np.log10(min(reynolds_stress[:,0,0]))),10**math.ceil(np.log10(max(reynolds_stress[:,0,0])))])
+    axs[1].set_ylim([10**math.floor(np.log10(min(reynolds_stress[:,1,1]))),10**math.ceil(np.log10(max(reynolds_stress[:,1,1])))])
+    axs[2].set_ylim([10**math.floor(np.log10(min(reynolds_stress[:,2,2]))),10**math.ceil(np.log10(max(reynolds_stress[:,2,2])))])
+    axs[3].set_ylim([-max(abs(reynolds_stress_true[:,0,1])),max(abs(reynolds_stress_true[:,0,1]))])
+    axs[4].set_ylim([-max(abs(reynolds_stress_true[:,0,2])),max(abs(reynolds_stress_true[:,0,2]))])
+    axs[5].set_ylim([-max(abs(reynolds_stress_true[:,1,2])),max(abs(reynolds_stress_true[:,1,2]))])
+    axs[0].set_yscale('log')
+    axs[1].set_yscale('log')
+    axs[2].set_yscale('log')
+    axs[0].legend()
+    plt.tight_layout()
+    fig.savefig(path / 'RST_convergence_rec.svg',dpi=300)
+
+    fig, axs = plt.subplots(6,figsize=(6,6))
+    axs[0].plot(np.linspace(1,len(reynolds_stress_true),len(reynolds_stress_true)),(reynolds_stress_true[:,0,0]),color='k',lw=lw,label='inst.')
+    axs[1].plot(np.linspace(1,len(reynolds_stress_true),len(reynolds_stress_true)),(reynolds_stress_true[:,1,1]),color='k',lw=lw)
+    axs[2].plot(np.linspace(1,len(reynolds_stress_true),len(reynolds_stress_true)),(reynolds_stress_true[:,2,2]),color='k',lw=lw)
+    axs[3].plot(np.linspace(1,len(reynolds_stress_true),len(reynolds_stress_true)),(reynolds_stress_true[:,0,1]),color='k',lw=lw)
+    axs[4].plot(np.linspace(1,len(reynolds_stress_true),len(reynolds_stress_true)),(reynolds_stress_true[:,0,2]),color='k',lw=lw)
+    axs[5].plot(np.linspace(1,len(reynolds_stress_true),len(reynolds_stress_true)),(reynolds_stress_true[:,1,2]),color='k',lw=lw)
+    axs[0].plot(np.linspace(1,len(mean_reynolds_stress_true),len(mean_reynolds_stress_true)),(mean_reynolds_stress_true[:,0,0]),color='r',lw=1,label='mean')
+    axs[1].plot(np.linspace(1,len(mean_reynolds_stress_true),len(mean_reynolds_stress_true)),(mean_reynolds_stress_true[:,1,1]),color='r',lw=1)
+    axs[2].plot(np.linspace(1,len(mean_reynolds_stress_true),len(mean_reynolds_stress_true)),(mean_reynolds_stress_true[:,2,2]),color='r',lw=1)
+    axs[3].plot(np.linspace(1,len(mean_reynolds_stress_true),len(mean_reynolds_stress_true)),(mean_reynolds_stress_true[:,0,1]),color='r',lw=1)
+    axs[4].plot(np.linspace(1,len(mean_reynolds_stress_true),len(mean_reynolds_stress_true)),(mean_reynolds_stress_true[:,0,2]),color='r',lw=1)
+    axs[5].plot(np.linspace(1,len(mean_reynolds_stress_true),len(mean_reynolds_stress_true)),(mean_reynolds_stress_true[:,1,2]),color='r',lw=1)
+    axs[0].set_ylabel(r'$\tau_{xx}$ [m$^2$/s$^2$]')
+    axs[1].set_ylabel(r'$\tau_{yy}$ [m$^2$/s$^2$]')
+    axs[2].set_ylabel(r'$\tau_{zz}$ [m$^2$/s$^2$]')
+    axs[3].set_ylabel(r'$\tau_{xy}$ [m$^2$/s$^2$]')
+    axs[4].set_ylabel(r'$\tau_{xz}$ [m$^2$/s$^2$]')
+    axs[5].set_ylabel(r'$\tau_{yz}$ [m$^2$/s$^2$]')
+    axs[5].set_xlabel('number of bubbles [-]')
+    axs[0].set_ylim([10**math.floor(np.log10(min(reynolds_stress[:,0,0]))),10**math.ceil(np.log10(max(reynolds_stress[:,0,0])))])
+    axs[1].set_ylim([10**math.floor(np.log10(min(reynolds_stress[:,1,1]))),10**math.ceil(np.log10(max(reynolds_stress[:,1,1])))])
+    axs[2].set_ylim([10**math.floor(np.log10(min(reynolds_stress[:,2,2]))),10**math.ceil(np.log10(max(reynolds_stress[:,2,2])))])
+    axs[3].set_ylim([-max(abs(reynolds_stress_true[:,0,1])),max(abs(reynolds_stress_true[:,0,1]))])
+    axs[4].set_ylim([-max(abs(reynolds_stress_true[:,0,2])),max(abs(reynolds_stress_true[:,0,2]))])
+    axs[5].set_ylim([-max(abs(reynolds_stress_true[:,1,2])),max(abs(reynolds_stress_true[:,1,2]))])
+    axs[0].set_yscale('log')
+    axs[1].set_yscale('log')
+    axs[2].set_yscale('log')
+    axs[0].legend()
+    plt.tight_layout()
+    fig.savefig(path / 'RST_convergence_true.svg',dpi=300)
 
     lw=0.5
     fig, axs = plt.subplots(3,figsize=(6,4))
@@ -444,7 +609,7 @@ def main():
             range=(min(E_vel['Ux'].values),max(E_vel['Ux'].values)))
     plt.ylabel('Frequency [-]')
     plt.xlabel(r'Error $u_x$ [m/s]')
-    plt.xlim([-max(abs(bins_p)),max(abs(bins_p))])
+    plt.xlim([min(bins_p),max(bins_p)])
     plt.tight_layout()
     fig.savefig(path / 'histogram_error_ux.svg',dpi=300)
 
@@ -470,10 +635,41 @@ def main():
     plt.tight_layout()
     fig.savefig(path / 'histogram_error_uz.svg',dpi=300)
 
+    bin_range=5
+    # Histogram of velocity error ux
+    fig = plt.figure(figsize=(3.0,2.5))
+    (n_p, bins_p, patches_p) = plt.hist(np.clip(RE_vel['Ux'].values,-1,1),\
+            bins=100,density=True, color='b', alpha=0.7,\
+            range=(min(RE_vel['Ux'].values),max(RE_vel['Ux'].values)))
+    plt.ylabel('Frequency [-]')
+    plt.xlabel(r'RE $u_x$ [-]')
+    plt.xlim([min(bins_p),max(bins_p)])
+    plt.tight_layout()
+    fig.savefig(path / 'histogram_ARE_ux.svg',dpi=300)
+
+    # Histogram of velocity error ux
+    fig = plt.figure(figsize=(3.0,2.5))
+    (n_p, bins_p, patches_p) = plt.hist(np.clip(RE_vel['Uy'].values,-bin_range,bin_range), \
+            bins=100,density=True, color='b', alpha=0.7)
+    plt.ylabel('Frequency [-]')
+    plt.xlabel(r'RE $u_y$ [-]')
+    plt.xlim([-bin_range,bin_range])
+    plt.tight_layout()
+    fig.savefig(path / 'histogram_ARE_uy.svg',dpi=300)
+
+    # Histogram of velocity error ux
+    fig = plt.figure(figsize=(3.0,2.5))
+    (n_p, bins_p, patches_p) = plt.hist(np.clip(RE_vel['Uz'].values,-bin_range,bin_range), \
+            bins=100,density=True, color='b', alpha=0.7)
+    plt.ylabel('Frequency [-]')
+    plt.xlabel(r'RE $u_z$ [-]')
+    plt.xlim([-bin_range,bin_range])
+    plt.tight_layout()
+    fig.savefig(path / 'histogram_ARE_uz.svg',dpi=300)
+
     # Histogram of velocities
     var_names = ['x','y','z']
     # Calculate the magnitude of the input velocities and standard dev.
-    fp_vel = np.asarray(fp_vel)
     fp_vel_mag = np.sqrt(fp_vel.dot(fp_vel))
     sigma = fp_vel_mag * np.asarray(fp_ti)
     fig, axs = plt.subplots(ncols=3,\
@@ -503,6 +699,33 @@ def main():
             axs[jj].set_yscale('log')
     plt.subplots_adjust(left=0.1, bottom=0.35, right=0.95, top=0.95, wspace=0.3, hspace=None)
     fig.savefig(path / 'velocity_histrograms.svg',dpi=300)
+
+    # Histogram of velocities
+    var_names = ['x','y','z']
+    # Calculate the magnitude of the input velocities and standard dev.
+    fp_vel = np.asarray(fp_vel)
+    fp_vel_mag = np.sqrt(fp_vel.dot(fp_vel))
+    sigma = fp_vel_mag * np.asarray(fp_ti)
+    fig, axs = plt.subplots(ncols=3,\
+            figsize=(3*2.5,2.5))
+    for jj,var_name in enumerate(var_names):
+        (n_sd, bins_sd, patches_sd) = axs[jj].hist(vel_true[:,jj], \
+            bins=50, density=True, color='r', alpha=0.7, label='sim. disp.',\
+            range=(min(vel_true[:,jj]),max(vel_true[:,jj])))
+        (n_rd, bins_rd, patches_rd) = axs[jj].hist(vel_rec[:,jj], \
+            bins=50, density=True, color='g', alpha=0.7, label='reconst. disp.',\
+            range=(min(vel_rec[:,jj]),max(vel_rec[:,jj])))
+        if jj == 0:
+            axs[jj].set_ylabel('Frequency [-]')
+            axs[jj].legend(loc=3,fontsize=10,bbox_to_anchor=(-0.15,-0.6),ncol=4,frameon=False)
+        axs[jj].set_xlabel(f'Velocity $u_{var_name}$ [m/s]')
+        axs[jj].set_xlim([min(bins_rd),max(bins_rd)])
+        if jj == 1:
+            axs[jj].set_yscale('log')
+        if jj == 2:
+            axs[jj].set_yscale('log')
+    plt.subplots_adjust(left=0.1, bottom=0.35, right=0.95, top=0.95, wspace=0.3, hspace=None)
+    fig.savefig(path / 'velocity_histrograms_disp.svg',dpi=300)
 
 if __name__ == "__main__":
     main()

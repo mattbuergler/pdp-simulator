@@ -246,12 +246,12 @@ def main():
         for k in aux_sensor_ids:
             # first interface (2h)
             lag_2h = abs(Decimal(ifd_times['t_2h'][0]) - Decimal(ifd_times['t_2h'][k]))
-            if lag_2h > max_t_k[k]:
+            if lag_2h.compare(max_t_k[k]) == 1:
                 # lag too large
                 ifd_times['t_2h'][k] = np.nan
             # second interface (2h+1)
             lag_2hp1 = abs(Decimal(ifd_times['t_2h+1'][0]) - Decimal(ifd_times['t_2h+1'][k]))
-            if lag_2hp1 > max_t_k[k]:
+            if lag_2hp1.compare(max_t_k[k]) == 1:
                 ifd_times['t_2h+1'][k] = np.nan
 
         # Store the interface detection times for complete and
@@ -424,8 +424,8 @@ def main():
                                            bubble_props['velocity'][1], \
                                            bubble_props['velocity'][2]
                                           ])
-        time_reconst[ii,0] = np.min(bubble_props['ifd_times'].to_numpy())
-        time_reconst[ii,1] = np.max(bubble_props['ifd_times'].to_numpy())
+        time_reconst[ii,0] = np.min(bubble_props['ifd_times'].to_numpy().astype('float64'))
+        time_reconst[ii,1] = np.max(bubble_props['ifd_times'].to_numpy().astype('float64'))
         bubble_diam_reconst[ii,:] = bubble_props['diameter']
     weighted_mean_velocity_reconst[0] = np.sum(velocity_reconst[:,0] \
                                     * (time_reconst[:,1]-time_reconst[:,0]),axis=0) \
