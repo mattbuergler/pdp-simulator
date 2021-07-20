@@ -102,6 +102,7 @@ def main():
     # Get sensors from config file
     # Eq. (1) Shen and Nakamura (2014): distance vectors S_0k from the central
     # front sensor tip (0) to any of the three peripheral rear sensor tips k
+    S_k = {}
     S_0k = {}
     S_0k_mag = {}
     cos_eta_0k = {}
@@ -112,11 +113,19 @@ def main():
     for sensor in sensors:
         # Get the sensor ID
         s_id = sensor['id']
+        # Get relative location vectors
+        S_k[s_id] = np.asarray(sensor['relative_location'],dtype='str')
+    for sensor in sensors:
+        # Get the sensor ID
+        s_id = sensor['id']
         sensor_ids.append(s_id)
         if s_id != 0:
             aux_sensor_ids.append(s_id)
             # Set the distance vectors
-            S_0k[s_id] = np.asarray(sensor['relative_location'],dtype='str')
+            S_0k[s_id] = np.array([Decimal(S_k[s_id][0])-Decimal(S_k[0][0]),
+                                   Decimal(S_k[s_id][1])-Decimal(S_k[0][1]),
+                                   Decimal(S_k[s_id][2])-Decimal(S_k[0][2])],
+                                  dtype='str')
             # Calculate magnitudes
             S_0k_mag[s_id] = (Decimal(S_0k[s_id][0]) * Decimal(S_0k[s_id][0])
                             + Decimal(S_0k[s_id][1]) * Decimal(S_0k[s_id][1])
