@@ -26,50 +26,65 @@ def inverse_den(x):
     else:
         return 1.0 / x
 
-path = pathlib.Path().cwd() / 'optimization/geometry'
-path_out = pathlib.Path().cwd() / 'optimization/geometry/results'
+path = pathlib.Path().cwd() / 'optimization/probe'
+path_out = pathlib.Path().cwd() / 'optimization/probe/results'
 
-geometries = ['geom1','geom2','geom3','geom4']
-#runs = ['001','002','003','004']
-runs = ['001','002','003','004','005','006','007','008']
+geometries = ['geom1','geom2','geom3','geom4','geom5','geom6','geom7','geom8','geom9','geom10','geom11','geom12']
+labels = {'geom1':'Probe1','geom2':'Probe2','geom3':'Probe3','geom4':'Probe4',\
+          'geom5':'Probe5','geom6':'Probe6','geom7':'Probe7','geom8':'Probe8',\
+          'geom9':'Probe9','geom10':'Probe10','geom11':'Probe11','geom12':'Probe12'}
+runs = ['001','002','003','004','005','006','007','009']
 
 errors = {}
 ux = {}
+overview = {}
 for geom in geometries:
     for run in runs:
         error_tmp = {}
         p = path / geom / run / 'run'
         u = pd.read_csv(p / 'error_summary_velocity.csv', index_col=0)
         d = pd.read_csv(p / 'error_summary_bubble_size.csv', index_col=0)
-        rs = pd.read_csv(p / 'error_reynolds_stresses.csv', index_col=0)
+        # error compared to disp. phase times series
         um = pd.read_csv(p / 'error_mean_velocity.csv', index_col=0)
-        rs_rel = pd.read_csv(p / 'rel_error_reynolds_stresses.csv', index_col=0)
+        rs = pd.read_csv(p / 'error_reynolds_stresses.csv', index_col=0)
+        ti = pd.read_csv(p / 'error_turbulent_intensity.csv', index_col=0)
+        # error compared to bubble times series
+        um_b = pd.read_csv(p / 'error_mean_velocity_bubble.csv', index_col=0)
+        rs_b = pd.read_csv(p / 'error_reynolds_stresses_bubble.csv', index_col=0)
+        ti_b = pd.read_csv(p / 'error_turbulent_intensity_bubble.csv', index_col=0)
+        # relative error compared to  disp. phase times series
         um_rel = pd.read_csv(p / 'rel_error_mean_velocity.csv', index_col=0)
+        rs_rel = pd.read_csv(p / 'rel_error_reynolds_stresses.csv', index_col=0)
+        ti_rel = pd.read_csv(p / 'rel_error_turbulent_intensity.csv', index_col=0)
+        # relative error compared to bubble times series
+        um_rel_b = pd.read_csv(p / 'rel_error_mean_velocity_bubble.csv', index_col=0)
+        rs_rel_b = pd.read_csv(p / 'rel_error_reynolds_stresses_bubble.csv', index_col=0)
+        ti_rel_b = pd.read_csv(p / 'rel_error_turbulent_intensity_bubble.csv', index_col=0)
+
         error_tmp['u'] = u
         error_tmp['d'] = d
-        error_tmp['rs'] = rs
         error_tmp['um'] = um
+        error_tmp['rs'] = rs
+        error_tmp['ti'] = ti
+        error_tmp['um_b'] = um_b
+        error_tmp['rs_b'] = rs_b
+        error_tmp['ti_b'] = ti_b
         error_tmp['rs_rel'] = rs_rel
         error_tmp['um_rel'] = um_rel
+        error_tmp['ti_rel'] = ti_rel
+        error_tmp['rs_rel_b'] = rs_rel_b
+        error_tmp['um_rel_b'] = um_rel_b
+        error_tmp['ti_rel_b'] = ti_rel_b
+
         errors[f'{geom}_{run}'] = error_tmp
+        overview[f'{geom}_{run}'] = pd.read_csv(p / 'overview.csv', index_col=0)
 
         config_file = p / 'config.json'
         config = json.loads(config_file.read_bytes())
         # Velocity scale
         U = config['FLOW_PROPERTIES']['mean_velocity']
         ux[f'{geom}_{run}'] = U[0]
-        # f = config['PROBE']['sampling_frequency']
-        # sensors = config['PROBE']['sensors']
-        # minmax = np.array([[LARGE_NUMBER,LARGE_NEG_NUMBER],
-        #                 [LARGE_NUMBER,LARGE_NEG_NUMBER],
-        #                 [LARGE_NUMBER,LARGE_NEG_NUMBER]])
-        # for sensor in sensors:
-        #     for ii in range(0,3):
-        #         minmax[ii,0] = min(minmax[ii,0], sensor['relative_location'][ii])
-        #         minmax[ii,1] = max(minmax[ii,1], sensor['relative_location'][ii])
-        # normalized_var[f'{geom}_{run}'] = 1./np.asarray([(minmax[0,1]-minmax[0,0])*inverse_den(U[0])*f,
-        #         (minmax[1,1]-minmax[1,0])*inverse_den(U[1])*f,
-        #         (minmax[2,1]-minmax[2,0])*inverse_den(U[2])*f])
+
 
 # Plot parameters
 plt.rcParams['font.family'] = 'serif'
@@ -78,243 +93,471 @@ plt.rcParams['xtick.major.pad']='6'
 plt.rcParams['ytick.major.pad']='6'
 plt.rcParams['mathtext.fontset'] = 'cm'
 plt.rcParams["figure.figsize"] = (6,6)
-cmap = matplotlib.cm.get_cmap('viridis')
+cmap = matplotlib.cm.get_cmap('RdYlBu')
 markers = ['^','o','s','*','<','>']
 colors = ['r','g','b']
 N = 3
-labels = {'geom1':'Probe1','geom2':'Probe2','geom3':'Probe3','geom4':'Probe4'}
-geometries = ['geom1','geom2','geom3','geom4']
-runs = ['001','002','003','004']
+tau = r'$\tau$'
 
-# Plot errors as function of sampling frequency
+
+# Plot errors and rel. errors compared to disp. phase time series
+
+geometries = ['geom1','geom2','geom3','geom4','geom5','geom6','geom7','geom8','geom9','geom10','geom11','geom12']
+runs = ['001','002','003','004','005','006','007','009']
+
+# v_labels = {'Ux':'u_x','Uy':'u_y','Uz':'u_z'}
+# y_lims = [[0,5],[0,10],[0,10]]
+# precision = [1,1,1]
+# var = 'u'
+# variables = ['Ux','Uy','Uz']
+# N = len(geometries)
+# w = 0.9/N  # the width of the bars
+# x = np.arange(len(runs))  # the label locations
+# shifts = np.linspace(-(N*w/2.0-0.5*w),(N*w/2.0-0.5*w),N)
+
+# fig, axs = plt.subplots(3,1,figsize=(6,5))
+# for kk,v in enumerate(variables):
+#     rects = {}
+#     for ii,geom in enumerate(geometries):
+#         y=[]
+#         for run in runs:
+#             y.append(errors[f'{geom}_{run}'][var][v]['MAE_rec']*100)
+#         rects[ii] = axs[kk].bar(x + shifts[ii], y, w, color=cmap(ii/N),label=labels[geom])
+#     # Add some text for labels, title and custom x-axis tick labels, etc.
+#     axs[kk].set_ylabel(f'MAE ${v_labels[v]}$ [cm/s]')
+#     axs[kk].set_ylim(y_lims[kk])
+#     axs[kk].set_xticks(x)
+#     axs[kk].set_xticklabels(runs, rotation=60)
+#     for key in rects:
+#         axs[kk].bar_label(rects[key], padding=3, rotation=90,fmt=f'%.{precision[kk]}f')
+#     axs[kk].grid()
+# axs[0].legend(loc=1,bbox_to_anchor=(1.31,1))
+# plt.subplots_adjust(left=0.15, bottom=0.09, right=0.80, top=0.98, wspace=0.2, hspace=0.4)
+# fig.savefig(path_out / 'MAE_u_bars_new.svg',dpi=300)
+
+v_labels = {'Ux':'u_x','Uy':'u_y','Uz':'u_z'}
+y_lims = [[0,20],[0,25],[0,25]]
+precision = [1,1,1]
 var = 'u'
-fig, axs = plt.subplots(1,1,figsize=(3,3))
-for ii,geom in enumerate(geometries):
-    x=[]
-    y=[]
-    for run in runs:
-        x.append(ux[f'{geom}_{run}']) 
-        y.append(errors[f'{geom}_{run}'][var]['Ux']['MARE_rec']*100) 
-    axs.plot(x,y,marker=markers[ii],color=cmap(ii/N),label=labels[geom])
-axs.set_ylabel(r'MARE $u_x$ [%]')
-axs.set_xlabel(r'$\overline{u}_x$ [-]')
-axs.set_ylim([0.01,1])
-# axs.set_xlim([min(var),max(var)])
-axs.set_yscale('log')
-# axs.set_xscale('log')
-axs.legend(loc=2,fontsize=9)
-plt.tight_layout()
-plt.grid()
-fig.savefig(path_out / 'MARE_velocity_ux.svg',dpi=300)
+variables = ['Ux','Uy','Uz']
+N = len(geometries)
+w = 0.9/N  # the width of the bars
+x = np.arange(len(runs))  # the label locations
+shifts = np.linspace(-(N*w/2.0-0.5*w),(N*w/2.0-0.5*w),N)
 
-# Plot errors as function of sampling frequency
-var = 'u'
-fig, axs = plt.subplots(1,1,figsize=(3,3))
-for ii,geom in enumerate(geometries):
-    x=[]
-    y=[]
-    for run in runs:
-        x.append(ux[f'{geom}_{run}']) 
-        y.append(errors[f'{geom}_{run}'][var]['Uy']['MARE_rec']*100) 
-    axs.plot(x,y,marker=markers[ii],color=cmap(ii/N),label=labels[geom])
-axs.set_ylabel(r'MARE $u_y$ [%]')
-axs.set_xlabel(r'$\overline{u}_x$ [-]')
-axs.set_ylim([10,10000])
-# axs.set_xlim([min(var),max(var)])
-axs.set_yscale('log')
-# axs.set_xscale('log')
-axs.legend(loc=2,fontsize=9)
-plt.tight_layout()
-plt.grid()
-fig.savefig(path_out / 'MARE_velocity_uy.svg',dpi=300)
+fig, axs = plt.subplots(3,1,figsize=(14,9))
+for kk,v in enumerate(variables):
+    rects = {}
+    for ii,geom in enumerate(geometries):
+        y=[]
+        for run in runs:
+            y.append(errors[f'{geom}_{run}'][var][v]['MAE_rec']*100)
+        rects[ii] = axs[kk].bar(x + shifts[ii], y, w, color=cmap(ii/N),label=labels[geom])
+    # Add some text for labels, title and custom x-axis tick labels, etc.
+    axs[kk].set_ylabel(f'MAE ${v_labels[v]}$ [cm/s]')
+    axs[kk].set_ylim(y_lims[kk])
+    axs[kk].set_xticks(x)
+    axs[kk].set_xticklabels(runs, rotation=60)
+    for key in rects:
+        axs[kk].bar_label(rects[key], padding=3, rotation=90,fmt=f'%.{precision[kk]}f')
+    axs[kk].grid()
+axs[0].legend(loc=1,bbox_to_anchor=(1.12,1))
+plt.subplots_adjust(left=0.07, bottom=0.09, right=0.89, top=0.98, wspace=0.2, hspace=0.3)
+fig.savefig(path_out / 'MAE_u_bars.svg',dpi=300)
 
-# Plot errors as function of sampling frequency
-var = 'u'
-fig, axs = plt.subplots(1,1,figsize=(3,3))
-for ii,geom in enumerate(geometries):
-    x=[]
-    y=[]
-    for run in runs:
-        x.append(ux[f'{geom}_{run}']) 
-        y.append(errors[f'{geom}_{run}'][var]['Uz']['MARE_rec']*100) 
-    axs.plot(x,y,marker=markers[ii],color=cmap(ii/N),label=labels[geom])
-axs.set_ylabel(r'MARE $u_z$ [%]')
-axs.set_xlabel(r'$\overline{u}_x$ [-]')
-axs.set_ylim([10,10000])
-# axs.set_xlim([min(var),max(var)])
-axs.set_yscale('log')
-# axs.set_xscale('log')
-axs.legend(loc=2,fontsize=9)
-plt.tight_layout()
-plt.grid()
-fig.savefig(path_out / 'MARE_velocity_uz.svg',dpi=300)
+v_labels = {'Ux':'u_x','Uy':'u_y','Uz':'u_z'}
+y_lims = [[0.000001,0.1],[0.000001,1],[0.0000001,1],[0.000001,0.1],[0.0000001,1],[0.0000001,0.01]]
+precision = [5,5,5,5,5,5]
+var = 'rs'
+variables = [('x','x'),('y','y'),('z','z'),('x','y'),('x','z'),('y','z')]
+N = len(geometries)
+w = 0.9/N  # the width of the bars
+x = np.arange(len(runs))  # the label locations
+shifts = np.linspace(-(N*w/2.0-0.5*w),(N*w/2.0-0.5*w),N)
 
+fig, axs = plt.subplots(6,1,figsize=(14,18))
+for kk,v in enumerate(variables):
+    rects = {}
+    for ii,geom in enumerate(geometries):
+        y=[]
+        for run in runs:
+            y.append(errors[f'{geom}_{run}'][var][v[0]][v[1]])
+        rects[ii] = axs[kk].bar(x + shifts[ii], abs(np.asarray(y)), w, color=cmap(ii/N),label=labels[geom])
+    # Add some text for labels, title and custom x-axis tick labels, etc.
+    vv = r'$_{%s}$'%(v[0]+v[1])
+    axs[kk].set_ylabel(f'AE {tau}{vv} [m$^2$/s$^2$]')
+    axs[kk].set_ylim(y_lims[kk])
+    axs[kk].set_yscale('log')
+    axs[kk].set_xticks(x)
+    axs[kk].set_xticklabels(runs, rotation=60)
+    for key in rects:
+        axs[kk].bar_label(rects[key], padding=3, rotation=90,fmt=f'%.{precision[kk]}f',label_type='center')
+    axs[kk].grid()
+axs[0].legend(loc=1,bbox_to_anchor=(1.12,1))
+plt.subplots_adjust(left=0.07, bottom=0.09, right=0.89, top=0.98, wspace=0.2, hspace=0.3)
+fig.savefig(path_out / 'AE_tau_bars.svg',dpi=300)
 
-# Plot errors as function of sampling frequency
-var = 'um_rel'
-fig, axs = plt.subplots(1,1,figsize=(3,3))
-for ii,geom in enumerate(geometries):
-    x=[]
-    y=[]
-    for run in runs:
-        x.append(ux[f'{geom}_{run}']) 
-        y.append(errors[f'{geom}_{run}'][var]['ux']*100) 
-    axs.plot(x,y,marker=markers[ii],color=cmap(ii/N),label=labels[geom])
-axs.set_ylabel(r'Relative Error $\overline{u}_x$ [%]')
-axs.set_xlabel(r'$\overline{u}_x$ [-]')
-axs.set_ylim([-0.2,0.1])
-# axs.set_xlim([min(var),max(var)])
-# axs.set_yscale('log')
-# axs.set_xscale('log')
-axs.legend(loc=8,fontsize=9)
-plt.tight_layout()
-plt.grid()
-fig.savefig(path_out / 'RE_Mean_velocity.svg',dpi=300)
-
-# Plot errors as function of sampling frequency
+v_labels = {'Ux':'u_x','Uy':'u_y','Uz':'u_z'}
+y_lims = [[0.1,100],[0.1,10000],[0.01,10000],[0.1,1000],[1,100000],[1,10000]]
+precision = [1,2,2,1,2,2]
 var = 'rs_rel'
-fig, axs = plt.subplots(1,1,figsize=(3,3))
-for ii,geom in enumerate(geometries):
-    x=[]
-    y=[]
-    for run in runs:
-        x.append(ux[f'{geom}_{run}']) 
-        y.append(errors[f'{geom}_{run}'][var]['x']['x']*100) 
-    axs.plot(x,y,marker=markers[ii],color=cmap(ii/N),label=labels[geom])
-axs.set_ylabel(r'Relative Error $\tau_{xx}$ [%]')
-axs.set_xlabel(r'$\overline{u}_x$ [-]')
-axs.set_ylim([-10,30])
-# axs.set_xlim([min(var),max(var)])
-# axs.set_yscale('log')
-# axs.set_xscale('log')
-axs.legend(loc=2,fontsize=9)
-plt.tight_layout()
-plt.grid()
-fig.savefig(path_out / 'RE_tau_xx.svg',dpi=300)
+variables = [('x','x'),('y','y'),('z','z'),('x','y'),('x','z'),('y','z')]
+N = len(geometries)
+w = 0.9/N  # the width of the bars
+x = np.arange(len(runs))  # the label locations
+shifts = np.linspace(-(N*w/2.0-0.5*w),(N*w/2.0-0.5*w),N)
 
-# Plot errors as function of sampling frequency
-var = 'rs_rel'
-fig, axs = plt.subplots(1,1,figsize=(3,3))
-for ii,geom in enumerate(geometries):
-    x=[]
-    y=[]
-    for run in runs:
-        x.append(ux[f'{geom}_{run}']) 
-        y.append(errors[f'{geom}_{run}'][var]['y']['y']*100) 
-    axs.plot(x,y,marker=markers[ii],color=cmap(ii/N),label=labels[geom])
-axs.set_ylabel(r'Relative Error $\tau_{yy}$ [%]')
-axs.set_xlabel(r'$\overline{u}_x$ [-]')
-axs.set_ylim([-10,600])
-# axs.set_xlim([min(var),max(var)])
-# axs.set_yscale('log')
-# axs.set_xscale('log')
-axs.legend(loc=2,fontsize=9)
-plt.tight_layout()
-plt.grid()
-fig.savefig(path_out / 'RE_tau_yy.svg',dpi=300)
+fig, axs = plt.subplots(6,1,figsize=(14,18))
+for kk,v in enumerate(variables):
+    rects = {}
+    for ii,geom in enumerate(geometries):
+        y=[]
+        for run in runs:
+            y.append(errors[f'{geom}_{run}'][var][v[0]][v[1]]*100.0)
+        rects[ii] = axs[kk].bar(x + shifts[ii], abs(np.asarray(y)), w, color=cmap(ii/N),label=labels[geom])
+    # Add some text for labels, title and custom x-axis tick labels, etc.
+    vv = r'$_{%s}$'%(v[0]+v[1])
+    axs[kk].set_ylabel(f'ARE {tau}{vv} [%]')
+    axs[kk].set_ylim(y_lims[kk])
+    axs[kk].set_yscale('log')
+    axs[kk].set_xticks(x)
+    axs[kk].set_xticklabels(runs, rotation=60)
+    for key in rects:
+        axs[kk].bar_label(rects[key], padding=3, rotation=90,fmt=f'%.{precision[kk]}f',label_type='center')
+    axs[kk].grid()
+axs[0].legend(loc=1,bbox_to_anchor=(1.12,1))
+plt.subplots_adjust(left=0.07, bottom=0.09, right=0.89, top=0.98, wspace=0.2, hspace=0.3)
+fig.savefig(path_out / 'ARE_tau_bars.svg',dpi=300)
 
-# Plot errors as function of sampling frequency
-var = 'rs_rel'
-fig, axs = plt.subplots(1,1,figsize=(3,3))
-for ii,geom in enumerate(geometries):
-    x=[]
-    y=[]
-    for run in runs:
-        x.append(ux[f'{geom}_{run}']) 
-        y.append(errors[f'{geom}_{run}'][var]['z']['z']*100) 
-    axs.plot(x,y,marker=markers[ii],color=cmap(ii/N),label=labels[geom])
-axs.set_ylabel(r'Relative Error $\tau_{zz}$ [%]')
-axs.set_xlabel(r'$\overline{u}_x$ [-]')
-axs.set_ylim([-10,600])
-# axs.set_xlim([min(var),max(var)])
-# axs.set_yscale('log')
-# axs.set_xscale('log')
-axs.legend(loc=2,fontsize=9)
-plt.tight_layout()
-plt.grid()
-fig.savefig(path_out / 'RE_tau_zz.svg',dpi=300)
+v_labels = {'Tix':'T_{I,x}','Tiy':'T_{I,y}','Tiz':'T_{I,z}'}
+y_lims = [[0.00001,0.01],[0.00001,0.1],[0.000001,0.1]]
+precision = [5,5,5]
+var = 'ti'
+variables = ['Tix','Tiy','Tiz']
+fig, axs = plt.subplots(3,1,figsize=(14,9))
+for kk,v in enumerate(variables):
+    rects = {}
+    for ii,geom in enumerate(geometries):
+        y=[]
+        for run in runs:
+            y.append(errors[f'{geom}_{run}'][var][v][0])
+        rects[ii] = axs[kk].bar(x + shifts[ii], abs(np.asarray(y)), w, color=cmap(ii/N),label=labels[geom])
+    # Add some text for labels, title and custom x-axis tick labels, etc.
+    axs[kk].set_ylabel(f'AE ${v_labels[v]}$ [-]')
+    axs[kk].set_ylim(y_lims[kk])
+    axs[kk].set_yscale('log')
+    axs[kk].set_xticks(x)
+    axs[kk].set_xticklabels(runs, rotation=60)
+    for key in rects:
+        axs[kk].bar_label(rects[key], padding=3, rotation=90,fmt=f'%.{precision[kk]}f',label_type='center')
+    axs[kk].grid()
+axs[0].legend(loc=1,bbox_to_anchor=(1.12,1))
+plt.subplots_adjust(left=0.07, bottom=0.09, right=0.89, top=0.98, wspace=0.2, hspace=0.3)
+fig.savefig(path_out / 'AE_ti_bars.svg',dpi=300)
 
-# Plot errors as function of sampling frequency
-var = 'rs_rel'
-fig, axs = plt.subplots(1,1,figsize=(3,3))
-for ii,geom in enumerate(geometries):
-    x=[]
-    y=[]
-    for run in runs:
-        x.append(ux[f'{geom}_{run}']) 
-        y.append(errors[f'{geom}_{run}'][var]['x']['y']*100) 
-    axs.plot(x,y,marker=markers[ii],color=cmap(ii/N),label=labels[geom])
-axs.set_ylabel(r'Relative Error $\tau_{xy}$ [%]')
-axs.set_xlabel(r'$\overline{u}_x$ [-]')
-# axs.set_ylim([0.001,1])
-# axs.set_xlim([min(var),max(var)])
-# axs.set_yscale('log')
-# axs.set_xscale('log')
-axs.legend(loc=1,fontsize=9)
-plt.tight_layout()
-plt.grid()
-fig.savefig(path_out / 'RE_tau_xy.svg',dpi=300)
+v_labels = {'Tix':'T_{I,x}','Tiy':'T_{I,y}','Tiz':'T_{I,z}'}
+y_lims = [[0.01,100],[0.01,1000],[0.01,1000]]
+precision = [2,2,2]
+var = 'ti_rel'
+variables = ['Tix','Tiy','Tiz']
+fig, axs = plt.subplots(3,1,figsize=(14,9))
+for kk,v in enumerate(variables):
+    rects = {}
+    for ii,geom in enumerate(geometries):
+        y=[]
+        for run in runs:
+            y.append(errors[f'{geom}_{run}'][var][v][0]*100)
+        rects[ii] = axs[kk].bar(x + shifts[ii], abs(np.asarray(y)), w, color=cmap(ii/N),label=labels[geom])
+    # Add some text for labels, title and custom x-axis tick labels, etc.
+    axs[kk].set_ylabel(f'ARE ${v_labels[v]}$ [%]')
+    axs[kk].set_ylim(y_lims[kk])
+    axs[kk].set_yscale('log')
+    axs[kk].set_xticks(x)
+    axs[kk].set_xticklabels(runs, rotation=60)
+    for key in rects:
+        axs[kk].bar_label(rects[key], padding=3, rotation=90,fmt=f'%.{precision[kk]}f',label_type='center')
+    axs[kk].grid()
+axs[0].legend(loc=1,bbox_to_anchor=(1.12,1))
+plt.subplots_adjust(left=0.07, bottom=0.09, right=0.89, top=0.98, wspace=0.2, hspace=0.3)
+fig.savefig(path_out / 'ARE_ti_bars.svg',dpi=300)
 
-# Plot errors as function of sampling frequency
-var = 'rs_rel'
-fig, axs = plt.subplots(1,1,figsize=(3,3))
-for ii,geom in enumerate(geometries):
-    x=[]
-    y=[]
-    for run in runs:
-        x.append(ux[f'{geom}_{run}']) 
-        y.append(errors[f'{geom}_{run}'][var]['x']['z']*100) 
-    axs.plot(x,y,marker=markers[ii],color=cmap(ii/N),label=labels[geom])
-axs.set_ylabel(r'Relative Error $\tau_{xz}$ [%]')
-axs.set_xlabel(r'$\overline{u}_x$ [-]')
-# axs.set_ylim([0.001,1])
-# axs.set_xlim([min(var),max(var)])
-# axs.set_yscale('log')
-# axs.set_xscale('log')
-axs.legend(loc=2,fontsize=9)
-plt.tight_layout()
-plt.grid()
-fig.savefig(path_out / 'RE_tau_xz.svg',dpi=300)
+v_labels = {'ux':r'\bar{u}_x','uy':r'\bar{u}_y','uz':r'\bar{u}_z'}
+var = 'um'
+y_lims = [[0.001,1],[0.001,1],[0.001,1]]
+precision = [3,3,3]
+variables = ['ux','uy','uz']
+fig, axs = plt.subplots(3,1,figsize=(14,9))
+for kk,v in enumerate(variables):
+    rects = {}
+    for ii,geom in enumerate(geometries):
+        y=[]
+        for run in runs:
+            y.append(errors[f'{geom}_{run}'][var][v][0]*100)
+        rects[ii] = axs[kk].bar(x + shifts[ii], abs(np.asarray(y)), w, color=cmap(ii/N),label=labels[geom])
+    # Add some text for labels, title and custom x-axis tick labels, etc.
+    axs[kk].set_ylabel(f'AE ${v_labels[v]}$ [cm/s]')
+    axs[kk].set_ylim(y_lims[kk])
+    axs[kk].set_yscale('log')
+    axs[kk].set_xticks(x)
+    axs[kk].set_xticklabels(runs, rotation=60)
+    for key in rects:
+        axs[kk].bar_label(rects[key], padding=3, rotation=90,fmt=f'%.{precision[kk]}f',label_type='center')
+    axs[kk].grid()
+axs[0].legend(loc=1,bbox_to_anchor=(1.12,1))
+plt.subplots_adjust(left=0.07, bottom=0.09, right=0.89, top=0.98, wspace=0.2, hspace=0.3)
+fig.savefig(path_out / 'AE_um_bars.svg',dpi=300)
 
-# Plot errors as function of sampling frequency
-var = 'rs_rel'
-fig, axs = plt.subplots(1,1,figsize=(3,3))
-for ii,geom in enumerate(geometries):
-    x=[]
-    y=[]
-    for run in runs:
-        x.append(ux[f'{geom}_{run}']) 
-        y.append(errors[f'{geom}_{run}'][var]['y']['z']*100) 
-    axs.plot(x,y,marker=markers[ii],color=cmap(ii/N),label=labels[geom])
-axs.set_ylabel(r'Relative Error $\tau_{yz}$ [%]')
-axs.set_xlabel(r'$\overline{u}_x$ [-]')
-# axs.set_ylim([0.001,1])
-# axs.set_xlim([min(var),max(var)])
-# axs.set_yscale('log')
-# axs.set_xscale('log')
-axs.legend(loc=1,fontsize=9)
-plt.tight_layout()
-plt.grid()
-fig.savefig(path_out / 'RE_tau_yz.svg',dpi=300)
 
-# Plot errors as function of sampling frequency
-N = 3
-var = 'd'
-fig, axs = plt.subplots(1,1,figsize=(3,3))
-for ii,geom in enumerate(geometries):
-    x=[]
-    y=[]
-    for run in runs:
-        x.append(ux[f'{geom}_{run}'])
-        y.append(errors[f'{geom}_{run}'][var]['D']['MARE']*100)
-    axs.plot(x,y,marker=markers[ii],color=cmap(ii/N),label=labels[geom])
-axs.set_ylabel(r'MARE $D$ [%]')
-axs.set_xlabel(r'$\overline{u}_x$ [-]')
-axs.set_ylim([0.0,0.5])
-# axs.set_xlim([min(var),max(var)])
-# axs.set_yscale('log')
-# axs.set_xscale('log')
-axs.legend(loc=2,fontsize=9)
-plt.tight_layout()
-plt.grid()
-fig.savefig(path_out / 'MARE_diameter.svg',dpi=300)
+# Plot errors and rel. errors compared to true bubble time series
+
+
+v_labels = {'Ux':'u_x','Uy':'u_y','Uz':'u_z'}
+y_lims = [[0.000001,0.1],[0.000001,1],[0.0000001,1],[0.000001,0.1],[0.0000001,1],[0.0000001,0.01]]
+precision = [5,5,5,5,5,5]
+var = 'rs_b'
+variables = [('x','x'),('y','y'),('z','z'),('x','y'),('x','z'),('y','z')]
+N = len(geometries)
+w = 0.9/N  # the width of the bars
+x = np.arange(len(runs))  # the label locations
+shifts = np.linspace(-(N*w/2.0-0.5*w),(N*w/2.0-0.5*w),N)
+
+fig, axs = plt.subplots(6,1,figsize=(14,18))
+for kk,v in enumerate(variables):
+    rects = {}
+    for ii,geom in enumerate(geometries):
+        y=[]
+        for run in runs:
+            y.append(errors[f'{geom}_{run}'][var][v[0]][v[1]])
+        rects[ii] = axs[kk].bar(x + shifts[ii], abs(np.asarray(y)), w, color=cmap(ii/N),label=labels[geom])
+    # Add some text for labels, title and custom x-axis tick labels, etc.
+    vv = r'$_{%s}$'%(v[0]+v[1])
+    axs[kk].set_ylabel(f'AE {tau}{vv} [m$^2$/s$^2$]')
+    axs[kk].set_ylim(y_lims[kk])
+    axs[kk].set_yscale('log')
+    axs[kk].set_xticks(x)
+    axs[kk].set_xticklabels(runs, rotation=60)
+    for key in rects:
+        axs[kk].bar_label(rects[key], padding=3, rotation=90,fmt=f'%.{precision[kk]}f',label_type='center')
+    axs[kk].grid()
+axs[0].legend(loc=1,bbox_to_anchor=(1.12,1))
+plt.subplots_adjust(left=0.07, bottom=0.09, right=0.89, top=0.98, wspace=0.2, hspace=0.3)
+fig.savefig(path_out / 'AE_tau_bubble_bars.svg',dpi=300)
+
+v_labels = {'Ux':'u_x','Uy':'u_y','Uz':'u_z'}
+y_lims = [[0.001,100],[0.01,10000],[0.01,10000],[0.01,1000],[0.1,100000],[0.1,10000]]
+precision = [3,2,2,2,2,2]
+var = 'rs_rel_b'
+variables = [('x','x'),('y','y'),('z','z'),('x','y'),('x','z'),('y','z')]
+N = len(geometries)
+w = 0.9/N  # the width of the bars
+x = np.arange(len(runs))  # the label locations
+shifts = np.linspace(-(N*w/2.0-0.5*w),(N*w/2.0-0.5*w),N)
+
+fig, axs = plt.subplots(6,1,figsize=(14,18))
+for kk,v in enumerate(variables):
+    rects = {}
+    for ii,geom in enumerate(geometries):
+        y=[]
+        for run in runs:
+            y.append(errors[f'{geom}_{run}'][var][v[0]][v[1]]*100.0)
+        rects[ii] = axs[kk].bar(x + shifts[ii], abs(np.asarray(y)), w, color=cmap(ii/N),label=labels[geom])
+    # Add some text for labels, title and custom x-axis tick labels, etc.
+    vv = r'$_{%s}$'%(v[0]+v[1])
+    axs[kk].set_ylabel(f'ARE {tau}{vv} [%]')
+    axs[kk].set_ylim(y_lims[kk])
+    axs[kk].set_yscale('log')
+    axs[kk].set_xticks(x)
+    axs[kk].set_xticklabels(runs, rotation=60)
+    for key in rects:
+        axs[kk].bar_label(rects[key], padding=3, rotation=90,fmt=f'%.{precision[kk]}f',label_type='center')
+    axs[kk].grid()
+axs[0].legend(loc=1,bbox_to_anchor=(1.12,1))
+plt.subplots_adjust(left=0.07, bottom=0.09, right=0.89, top=0.98, wspace=0.2, hspace=0.3)
+fig.savefig(path_out / 'ARE_tau_bubble_bars.svg',dpi=300)
+
+v_labels = {'Tix':'T_{I,x}','Tiy':'T_{I,y}','Tiz':'T_{I,z}'}
+y_lims = [[0.0000001,0.01],[0.000001,0.1],[0.000001,0.1]]
+precision = [6,5,5]
+var = 'ti_b'
+variables = ['Tix','Tiy','Tiz']
+fig, axs = plt.subplots(3,1,figsize=(14,9))
+for kk,v in enumerate(variables):
+    rects = {}
+    for ii,geom in enumerate(geometries):
+        y=[]
+        for run in runs:
+            y.append(errors[f'{geom}_{run}'][var][v][0])
+        rects[ii] = axs[kk].bar(x + shifts[ii], abs(np.asarray(y)), w, color=cmap(ii/N),label=labels[geom])
+    # Add some text for labels, title and custom x-axis tick labels, etc.
+    axs[kk].set_ylabel(f'AE ${v_labels[v]}$ [-]')
+    axs[kk].set_ylim(y_lims[kk])
+    axs[kk].set_yscale('log')
+    axs[kk].set_xticks(x)
+    axs[kk].set_xticklabels(runs, rotation=60)
+    for key in rects:
+        axs[kk].bar_label(rects[key], padding=3, rotation=90,fmt=f'%.{precision[kk]}f',label_type='center')
+    axs[kk].grid()
+axs[0].legend(loc=1,bbox_to_anchor=(1.12,1))
+plt.subplots_adjust(left=0.07, bottom=0.09, right=0.89, top=0.98, wspace=0.2, hspace=0.3)
+fig.savefig(path_out / 'AE_ti_bubble_bars.svg',dpi=300)
+
+v_labels = {'Tix':'T_{I,x}','Tiy':'T_{I,y}','Tiz':'T_{I,z}'}
+y_lims = [[0.001,100],[0.01,1000],[0.01,1000]]
+precision = [3,3,3]
+var = 'ti_rel_b'
+variables = ['Tix','Tiy','Tiz']
+fig, axs = plt.subplots(3,1,figsize=(14,9))
+for kk,v in enumerate(variables):
+    rects = {}
+    for ii,geom in enumerate(geometries):
+        y=[]
+        for run in runs:
+            y.append(errors[f'{geom}_{run}'][var][v][0]*100)
+        rects[ii] = axs[kk].bar(x + shifts[ii], abs(np.asarray(y)), w, color=cmap(ii/N),label=labels[geom])
+    # Add some text for labels, title and custom x-axis tick labels, etc.
+    axs[kk].set_ylabel(f'ARE ${v_labels[v]}$ [%]')
+    axs[kk].set_ylim(y_lims[kk])
+    axs[kk].set_yscale('log')
+    axs[kk].set_xticks(x)
+    axs[kk].set_xticklabels(runs, rotation=60)
+    for key in rects:
+        axs[kk].bar_label(rects[key], padding=3, rotation=90,fmt=f'%.{precision[kk]}f',label_type='center')
+    axs[kk].grid()
+axs[0].legend(loc=1,bbox_to_anchor=(1.12,1))
+plt.subplots_adjust(left=0.07, bottom=0.09, right=0.89, top=0.98, wspace=0.2, hspace=0.3)
+fig.savefig(path_out / 'ARE_ti_bubble_bars.svg',dpi=300)
+
+
+v_labels = {'ux':r'\bar{u}_x','uy':r'\bar{u}_y','uz':r'\bar{u}_z'}
+var = 'um_b'
+y_lims = [[0.0001,1],[0.00001,1],[0.0001,1]]
+precision = [3,3,3]
+variables = ['ux','uy','uz']
+fig, axs = plt.subplots(3,1,figsize=(14,9))
+for kk,v in enumerate(variables):
+    rects = {}
+    for ii,geom in enumerate(geometries):
+        y=[]
+        for run in runs:
+            y.append(errors[f'{geom}_{run}'][var][v][0]*100)
+        rects[ii] = axs[kk].bar(x + shifts[ii], abs(np.asarray(y)), w, color=cmap(ii/N),label=labels[geom])
+    # Add some text for labels, title and custom x-axis tick labels, etc.
+    axs[kk].set_ylabel(f'AE ${v_labels[v]}$ [cm/s]')
+    axs[kk].set_ylim(y_lims[kk])
+    axs[kk].set_yscale('log')
+    axs[kk].set_xticks(x)
+    axs[kk].set_xticklabels(runs, rotation=60)
+    for key in rects:
+        axs[kk].bar_label(rects[key], padding=3, rotation=90,fmt=f'%.{precision[kk]}f',label_type='center')
+    axs[kk].grid()
+axs[0].legend(loc=1,bbox_to_anchor=(1.12,1))
+plt.subplots_adjust(left=0.07, bottom=0.09, right=0.89, top=0.98, wspace=0.2, hspace=0.3)
+fig.savefig(path_out / 'AE_um_bubble_bars.svg',dpi=300)
+
+
+# Plot actual value comparison
+
+v_labels = {'Ux':r'\bar{u}_x','Uy':r'\bar{u}_y','Uz':r'\bar{u}_z'}
+y_lims = [[0,25],[-0.01,0.01],[-0.02,0.01]]
+variables = ['Ux','Uy','Uz']
+precision = [1,4,4]
+N = len(geometries)
+w = 0.9/N  # the width of the bars
+x = np.arange(len(runs))  # the label locations
+shifts = np.linspace(-(N*w/2.0-0.5*w),(N*w/2.0-0.5*w),N)
+
+fig, axs = plt.subplots(3,1,figsize=(14,9))
+for kk,v in enumerate(variables):
+    rects = {}
+    for ii,geom in enumerate(geometries):
+        y=[]
+        for ll,run in enumerate(runs):
+            axs[kk].hlines(overview[f'{geom}_{run}']['DP_bubble'][v], x[ll]+shifts[ii]-w/2, x[ll]+shifts[ii]+w/2, color='r',linestyle='-')
+            axs[kk].hlines(overview[f'{geom}_{run}']['DP'][v], x[ll]+shifts[ii]-w/2, x[ll]+shifts[ii]+w/2, color='b',linestyle=':')
+            y.append(overview[f'{geom}_{run}']['DP_reconstructed'][v])
+        rects[ii] = axs[kk].bar(x + shifts[ii], y, w, color=cmap(ii/N),label=labels[geom])
+    # Add some text for labels, title and custom x-axis tick labels, etc.
+    axs[kk].set_ylabel(f'${v_labels[v]}$ [m/s]')
+    axs[kk].set_ylim(y_lims[kk])
+    axs[kk].set_xticks(x)
+    axs[kk].set_xticklabels(runs, rotation=60)
+
+    for key in rects:
+        axs[kk].bar_label(rects[key], padding=5, rotation=90,fmt=f'%.{precision[kk]}f',label_type='edge',fontsize=8)
+    axs[kk].grid()
+axs[0].plot([],[], color='r',linestyle='-',label='Disp. Phase\n(bubbles)')
+axs[0].plot([],[], color='b',linestyle=':',label='Disp. Phase\n(all)')
+axs[0].legend(loc=1,bbox_to_anchor=(1.13,1))
+plt.subplots_adjust(left=0.07, bottom=0.09, right=0.89, top=0.98, wspace=0.2, hspace=0.3)
+fig.savefig(path_out / 'Overview_U_bars.svg',dpi=300)
+
+
+v_labels = {'Tau_xx':r'\bar{\tau}_{xx}','Tau_yy':r'\bar{\tau}_{yy}','Tau_zz':r'\bar{\tau}_{zz}','Tau_xy':r'\bar{\tau}_{xy}','Tau_xz':r'\bar{\tau}_{xz}','Tau_yz':r'\bar{\tau}_{yz}'}
+y_lims = [[0,0.08],[0,0.04],[0.0,0.06],[-0.012,0.0],[-0.005,0.004],[-0.0005,0.0005]]
+variables = ['Tau_xx','Tau_yy','Tau_zz','Tau_xy','Tau_xz','Tau_yz']
+precision = [5,5,5,5,5,5]
+N = len(geometries)
+w = 0.9/N  # the width of the bars
+x = np.arange(len(runs))  # the label locations
+shifts = np.linspace(-(N*w/2.0-0.5*w),(N*w/2.0-0.5*w),N)
+
+fig, axs = plt.subplots(6,1,figsize=(14,18))
+for kk,v in enumerate(variables):
+    rects = {}
+    for ii,geom in enumerate(geometries):
+        y=[]
+        for ll,run in enumerate(runs):
+            axs[kk].hlines(overview[f'{geom}_{run}']['DP_bubble'][v], x[ll]+shifts[ii]-w/2, x[ll]+shifts[ii]+w/2, color='r',linestyle='-')
+            axs[kk].hlines(overview[f'{geom}_{run}']['DP'][v], x[ll]+shifts[ii]-w/2, x[ll]+shifts[ii]+w/2, color='b',linestyle=':')
+            y.append(overview[f'{geom}_{run}']['DP_reconstructed'][v])
+        rects[ii] = axs[kk].bar(x + shifts[ii], y, w, color=cmap(ii/N),label=labels[geom])
+    # Add some text for labels, title and custom x-axis tick labels, etc.
+    axs[kk].set_ylabel(f'${v_labels[v]}$ [m/s]')
+    axs[kk].set_ylim(y_lims[kk])
+    axs[kk].set_xticks(x)
+    axs[kk].set_xticklabels(runs, rotation=60)
+
+    for key in rects:
+        axs[kk].bar_label(rects[key], padding=3, rotation=90,fmt=f'%.{precision[kk]}f',label_type='edge',fontsize=8)
+    axs[kk].grid()
+axs[0].plot([],[], color='r',linestyle='-',label='Disp. Phase\n(bubbles)')
+axs[0].plot([],[], color='b',linestyle=':',label='Disp. Phase\n(all)')
+axs[0].legend(loc=1,bbox_to_anchor=(1.13,1))
+plt.subplots_adjust(left=0.07, bottom=0.09, right=0.89, top=0.98, wspace=0.2, hspace=0.3)
+fig.savefig(path_out / 'Overview_RST_bars.svg',dpi=300)
+
+# Plot actual value comparison
+
+v_labels = {'T_Ix':r'T_{I,x}','T_Iy':r'T_{I,y}','T_Iz':r'T_{I,z}'}
+y_lims = [[0,0.1],[0,0.03],[0.0,0.03]]
+variables = ['T_Ix','T_Iy','T_Iz']
+precision = [4,4,4]
+N = len(geometries)
+w = 0.9/N  # the width of the bars
+x = np.arange(len(runs))  # the label locations
+shifts = np.linspace(-(N*w/2.0-0.5*w),(N*w/2.0-0.5*w),N)
+
+fig, axs = plt.subplots(3,1,figsize=(14,9))
+for kk,v in enumerate(variables):
+    rects = {}
+    for ii,geom in enumerate(geometries):
+        y=[]
+        for ll,run in enumerate(runs):
+            axs[kk].hlines(overview[f'{geom}_{run}']['DP_bubble'][v], x[ll]+shifts[ii]-w/2, x[ll]+shifts[ii]+w/2, color='r',linestyle='-')
+            axs[kk].hlines(overview[f'{geom}_{run}']['DP'][v], x[ll]+shifts[ii]-w/2, x[ll]+shifts[ii]+w/2, color='b',linestyle=':')
+            y.append(overview[f'{geom}_{run}']['DP_reconstructed'][v])
+        rects[ii] = axs[kk].bar(x + shifts[ii], y, w, color=cmap(ii/N),label=labels[geom])
+    # Add some text for labels, title and custom x-axis tick labels, etc.
+    axs[kk].set_ylabel(f'${v_labels[v]}$ [m/s]')
+    axs[kk].set_ylim(y_lims[kk])
+    axs[kk].set_xticks(x)
+    axs[kk].set_xticklabels(runs, rotation=60)
+
+    for key in rects:
+        axs[kk].bar_label(rects[key], padding=3, rotation=90,fmt=f'%.{precision[kk]}f',label_type='edge',fontsize=8)
+    axs[kk].grid()
+axs[0].plot([],[], color='r',linestyle='-',label='Disp. Phase\n(bubbles)')
+axs[0].plot([],[], color='b',linestyle=':',label='Disp. Phase\n(all)')
+axs[0].legend(loc=1,bbox_to_anchor=(1.13,1))
+plt.subplots_adjust(left=0.07, bottom=0.09, right=0.89, top=0.98, wspace=0.2, hspace=0.3)
+fig.savefig(path_out / 'Overview_TI_bars.svg',dpi=300)
