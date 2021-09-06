@@ -129,7 +129,7 @@
     }
   },
   "type": "object",
-  "required": ["FLOW_PROPERTIES", "PROBE", "REPRODUCIBLE"],
+  "required": ["FLOW_PROPERTIES", "PROBE", "RECONSTRUCTION", "REPRODUCIBLE"],
   "properties": {
     "FLOW_PROPERTIES": {
       "type": "object",
@@ -229,6 +229,18 @@
               }
             }
           }
+        }
+      }
+    },
+    "RECONSTRUCTION": {
+      "type": "object",
+      "description": "Definitions regarding the reconstruction algorithm.",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "The reconstruction algorithm: Shen and Nakamura (2014) or Tian et al. (2015).",
+          "enum": ["Shen_Nakamura_2014", "Tian_et_al_2015"]
         }
       }
     },

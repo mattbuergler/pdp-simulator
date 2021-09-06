@@ -50,5 +50,8 @@
             }
         ]
     },
+    "RECONSTRUCTION": {
+        "type": "Shen_Nakamura_2014"
+    },
     "REPRODUCIBLE": "yes"
 }

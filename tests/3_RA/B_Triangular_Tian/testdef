@@ -1,0 +1,29 @@
+{
+  "SBG": "",
+  "RA": "yes",
+  "eval": "",
+  "files":
+  [
+    {
+      "file": "binary_signal.h5",
+      "dataset" : "signal",
+      "tag": "compare signal time series",
+      "rel": 1e-6,
+      "abs": 1e-6
+    },
+    {
+      "file": "reconstructed.h5",
+      "dataset" : "bubbles/interaction_times",
+      "tag": "compare time vector",
+      "rel": 1e-6,
+      "abs": 1e-6
+    },
+    {
+      "file": "reconstructed.h5",
+      "dataset" : "bubbles/velocity",
+      "tag": "compare reconstructed velocity time series",
+      "rel": 1e-6,
+      "abs": 1e-6
+    }
+  ]
+}

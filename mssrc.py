@@ -5,6 +5,7 @@ import argparse
 import pathlib
 import json
 import jsonschema
+import math
 import numpy as np
 from numpy import linalg
 import pandas as pd
@@ -283,139 +284,221 @@ def main():
     # Loop over complete bubbles
     for ii,bubble_props in enumerate(bubbles_complete):
         ifd_times = bubble_props['ifd_times']
-        # Time differences between sensors 0 and k for interfaces 2h and 2h+1
-        delta_t_0k_2h = {}
-        delta_t_0k_2hp1 = {}
-        # Time differences k=1,2,3,4 for interfaces 2h and 2h+1
-        delta_t_k_h = {}
-        delta_t_k_h[0] = Decimal(ifd_times['t_2h+1'][0]) - Decimal(ifd_times['t_2h'][0])
-        # 1. Reconstruct instantaneous local velocity
-        # Inverse of measurable displacement velocity of the h-th bubble
-        # for sensor 0 and k
-        V_m0k_h_inv = {}
-        E_0k_2h = {}
-        E_0k_2hp1 = {}
-        A_0 = []
-        A_01_h = []
-        A_02_h = []
-        A_03_h = []
-        B_01_2h = []
-        B_02_2h = []
-        B_03_2h = []
-        B_01_2hp1 = []
-        B_02_2hp1 = []
-        B_03_2hp1 = []
 
-        for k in aux_sensor_ids:
-            # Time differences
-            # Eq. (2) from Shen and Nakamura (2014)
-            delta_t_0k_2h[k] = Decimal(ifd_times['t_2h'][k]) \
-                             - Decimal(ifd_times['t_2h'][0])
-            delta_t_0k_2hp1[k] = Decimal(ifd_times['t_2h+1'][k]) \
-                               - Decimal(ifd_times['t_2h+1'][0])
-            # Eq. (3) from Shen and Nakamura (2014)
-            delta_t_k_h[k] = Decimal(ifd_times['t_2h+1'][k]) \
-                           - Decimal(ifd_times['t_2h'][k])
-            # Measurable displacement velocity
-            # Eq. (30) from Shen and Nakamura (2014)
-            V_m0k_h_inv[k] = (delta_t_0k_2h[k] + delta_t_0k_2hp1[k]) \
-                        / (Decimal(2.0) * Decimal(S_0k_mag[k]))
-            A_0.append(cos_eta_0k[k])
-            A_01_h.append(np.array([V_m0k_h_inv[k], cos_eta_0k[k][1], cos_eta_0k[k][2]]))
-            A_02_h.append(np.array([cos_eta_0k[k][0], V_m0k_h_inv[k], cos_eta_0k[k][2]]))
-            A_03_h.append(np.array([cos_eta_0k[k][0], cos_eta_0k[k][1], V_m0k_h_inv[k]]))
+        # Check the reconstruction algorithm type
+        ra_type = config['RECONSTRUCTION']['type']
 
-        # Calculate matrix determinants
-        # Eq. (32) to (35) from Shen and Nakamura (2014)
-        A_0_det = calc_det(A_0)
-        A_01_h_det = calc_det(A_01_h)
-        A_02_h_det = calc_det(A_02_h)
-        A_03_h_det = calc_det(A_03_h)
-        # Calculate instantaneous velocity magnitude and components
-        dummy = (A_01_h_det* A_01_h_det + A_02_h_det*A_02_h_det + A_03_h_det*A_03_h_det).sqrt()
-        # Eq. (37) from Shen and Nakamura (2014)
-        V_bh_mag =  abs(A_0_det) * inverse_den(dummy)
-        # Eq. (36) from Shen and Nakamura (2014)
-        V_bh_x = V_bh_mag**2 * A_01_h_det * inverse_den(A_0_det)
-        V_bh_y = V_bh_mag**2 * A_02_h_det * inverse_den(A_0_det)
-        V_bh_z = V_bh_mag**2 * A_03_h_det * inverse_den(A_0_det)
-        bubble_props['velocity'] = np.array([V_bh_x, V_bh_y, V_bh_z])
+        if ra_type == "Shen_Nakamura_2014":
+            # Reconstruction algorithm of Shen and Nakamura (2014)
+            # https://doi.org/10.1016/j.ijmultiphaseflow.2013.11.010
 
-        # 2. Reconstruct bubble diameter and interfacial normal unit vector
-        # measurement
-        E_0k_2h = {}
-        E_0k_2hp1 = {}
-        B_01_2h = []
-        B_02_2h = []
-        B_03_2h = []
-        B_01_2hp1 = []
-        B_02_2hp1 = []
-        B_03_2hp1 = []
-        for k in aux_sensor_ids:
-            # Chord lengths of interfaces 2h and 2h+1
-            # Eq. (43) and (44) in Shen and Nakamura (2014)
-            E_0k_2h[k] = V_bh_mag*V_bh_mag * delta_t_0k_2h[k] \
-                        * (delta_t_0k_2hp1[k] + delta_t_k_h[0]) / S_0k_mag[k] \
-                        - S_0k_mag[k]
-            E_0k_2hp1[k] = V_bh_mag*V_bh_mag * delta_t_0k_2hp1[k] \
-                        * (delta_t_0k_2h[k] - delta_t_k_h[0]) / S_0k_mag[k] \
-                        - S_0k_mag[k]
+            # Time differences between sensors 0 and k for interfaces 2h and 2h+1
+            delta_t_0k_2h = {}
+            delta_t_0k_2hp1 = {}
+            # Time differences k=1,2,3,4 for interfaces 2h and 2h+1
+            delta_t_k_h = {}
+            delta_t_k_h[0] = Decimal(ifd_times['t_2h+1'][0]) - Decimal(ifd_times['t_2h'][0])
+
+            # 1. Reconstruct instantaneous local velocity
+            # Inverse of measurable displacement velocity of the h-th bubble
+            # for sensor 0 and k
+            V_m0k_h_inv = {}
+            E_0k_2h = {}
+            E_0k_2hp1 = {}
+            A_0 = []
+            A_01_h = []
+            A_02_h = []
+            A_03_h = []
+            B_01_2h = []
+            B_02_2h = []
+            B_03_2h = []
+            B_01_2hp1 = []
+            B_02_2hp1 = []
+            B_03_2hp1 = []
+
+            for k in aux_sensor_ids:
+                # Time differences
+                # Eq. (2) from Shen and Nakamura (2014)
+                delta_t_0k_2h[k] = Decimal(ifd_times['t_2h'][k]) \
+                                 - Decimal(ifd_times['t_2h'][0])
+                delta_t_0k_2hp1[k] = Decimal(ifd_times['t_2h+1'][k]) \
+                                   - Decimal(ifd_times['t_2h+1'][0])
+                # Eq. (3) from Shen and Nakamura (2014)
+                delta_t_k_h[k] = Decimal(ifd_times['t_2h+1'][k]) \
+                               - Decimal(ifd_times['t_2h'][k])
+                # Measurable displacement velocity
+                # Eq. (30) from Shen and Nakamura (2014)
+                V_m0k_h_inv[k] = (delta_t_0k_2h[k] + delta_t_0k_2hp1[k]) \
+                            / (Decimal(2.0) * Decimal(S_0k_mag[k]))
+                A_0.append(cos_eta_0k[k])
+                A_01_h.append(np.array([V_m0k_h_inv[k], cos_eta_0k[k][1], cos_eta_0k[k][2]]))
+                A_02_h.append(np.array([cos_eta_0k[k][0], V_m0k_h_inv[k], cos_eta_0k[k][2]]))
+                A_03_h.append(np.array([cos_eta_0k[k][0], cos_eta_0k[k][1], V_m0k_h_inv[k]]))
+
+            # Calculate matrix determinants
+            # Eq. (32) to (35) from Shen and Nakamura (2014)
+            A_0_det = calc_det(A_0)
+            A_01_h_det = calc_det(A_01_h)
+            A_02_h_det = calc_det(A_02_h)
+            A_03_h_det = calc_det(A_03_h)
+            # Calculate instantaneous velocity magnitude and components
+            dummy = (A_01_h_det* A_01_h_det + A_02_h_det*A_02_h_det + A_03_h_det*A_03_h_det).sqrt()
+            # Eq. (37) from Shen and Nakamura (2014)
+            V_bh_mag =  abs(A_0_det) * inverse_den(dummy)
+            # Eq. (36) from Shen and Nakamura (2014)
+            V_bh_x = V_bh_mag**2 * A_01_h_det * inverse_den(A_0_det)
+            V_bh_y = V_bh_mag**2 * A_02_h_det * inverse_den(A_0_det)
+            V_bh_z = V_bh_mag**2 * A_03_h_det * inverse_den(A_0_det)
+            bubble_props['velocity'] = np.array([V_bh_x, V_bh_y, V_bh_z])
+
+            # 2. Reconstruct bubble diameter and interfacial normal unit vector
+            # measurement
+            E_0k_2h = {}
+            E_0k_2hp1 = {}
+            B_01_2h = []
+            B_02_2h = []
+            B_03_2h = []
+            B_01_2hp1 = []
+            B_02_2hp1 = []
+            B_03_2hp1 = []
+            for k in aux_sensor_ids:
+                # Chord lengths of interfaces 2h and 2h+1
+                # Eq. (43) and (44) in Shen and Nakamura (2014)
+                E_0k_2h[k] = V_bh_mag*V_bh_mag * delta_t_0k_2h[k] \
+                            * (delta_t_0k_2hp1[k] + delta_t_k_h[0]) / S_0k_mag[k] \
+                            - S_0k_mag[k]
+                E_0k_2hp1[k] = V_bh_mag*V_bh_mag * delta_t_0k_2hp1[k] \
+                            * (delta_t_0k_2h[k] - delta_t_k_h[0]) / S_0k_mag[k] \
+                            - S_0k_mag[k]
+                # Eq. (46) and (48) in Shen and Nakamura (2014)
+                B_01_2h.append(np.array([E_0k_2h[k], cos_eta_0k[k][1], cos_eta_0k[k][2]]))
+                B_02_2h.append(np.array([cos_eta_0k[k][0], E_0k_2h[k], cos_eta_0k[k][2]]))
+                B_03_2h.append(np.array([cos_eta_0k[k][0], cos_eta_0k[k][1], E_0k_2h[k]]))
+                B_01_2hp1.append(np.array([E_0k_2hp1[k], cos_eta_0k[k][1], cos_eta_0k[k][2]]))
+                B_02_2hp1.append(np.array([cos_eta_0k[k][0], E_0k_2hp1[k], cos_eta_0k[k][2]]))
+                B_03_2hp1.append(np.array([cos_eta_0k[k][0], cos_eta_0k[k][1], E_0k_2hp1[k]]))
+            # Calculate matrix determinants
             # Eq. (46) and (48) in Shen and Nakamura (2014)
-            B_01_2h.append(np.array([E_0k_2h[k], cos_eta_0k[k][1], cos_eta_0k[k][2]]))
-            B_02_2h.append(np.array([cos_eta_0k[k][0], E_0k_2h[k], cos_eta_0k[k][2]]))
-            B_03_2h.append(np.array([cos_eta_0k[k][0], cos_eta_0k[k][1], E_0k_2h[k]]))
-            B_01_2hp1.append(np.array([E_0k_2hp1[k], cos_eta_0k[k][1], cos_eta_0k[k][2]]))
-            B_02_2hp1.append(np.array([cos_eta_0k[k][0], E_0k_2hp1[k], cos_eta_0k[k][2]]))
-            B_03_2hp1.append(np.array([cos_eta_0k[k][0], cos_eta_0k[k][1], E_0k_2hp1[k]]))
-        # Calculate matrix determinants
-        # Eq. (46) and (48) in Shen and Nakamura (2014)
-        B_01_2h_det = calc_det(B_01_2h)
-        B_02_2h_det = calc_det(B_02_2h)
-        B_03_2h_det = calc_det(B_03_2h)
-        B_01_2hp1_det = calc_det(B_01_2hp1)
-        B_02_2hp1_det = calc_det(B_02_2hp1)
-        B_03_2hp1_det = calc_det(B_03_2hp1)
+            B_01_2h_det = calc_det(B_01_2h)
+            B_02_2h_det = calc_det(B_02_2h)
+            B_03_2h_det = calc_det(B_03_2h)
+            B_01_2hp1_det = calc_det(B_01_2hp1)
+            B_02_2hp1_det = calc_det(B_02_2hp1)
+            B_03_2hp1_det = calc_det(B_03_2hp1)
 
-        # Calculate the bubble diameter
-        dummy_2h = (B_01_2h_det*B_01_2h_det \
-                    + B_02_2h_det*B_02_2h_det \
-                    + B_03_2h_det*B_03_2h_det).sqrt()
-        dummy_2hp1 = (B_01_2hp1_det*B_01_2hp1_det \
-                    + B_02_2hp1_det*B_02_2hp1_det \
-                    + B_03_2hp1_det*B_03_2hp1_det).sqrt()
-        # Eq. (50) from Shen and Nakamura (2014)
-        D_h_2h = dummy_2h / A_0_det
-        D_h_2hp1 = dummy_2hp1 / A_0_det
-        bubble_props['diameter'] = np.array([D_h_2h, D_h_2hp1])
+            # Calculate the bubble diameter
+            dummy_2h = (B_01_2h_det*B_01_2h_det \
+                        + B_02_2h_det*B_02_2h_det \
+                        + B_03_2h_det*B_03_2h_det).sqrt()
+            dummy_2hp1 = (B_01_2hp1_det*B_01_2hp1_det \
+                        + B_02_2hp1_det*B_02_2hp1_det \
+                        + B_03_2hp1_det*B_03_2hp1_det).sqrt()
+            # Eq. (50) from Shen and Nakamura (2014)
+            D_h_2h = dummy_2h / A_0_det
+            D_h_2hp1 = dummy_2hp1 / A_0_det
+            bubble_props['diameter'] = np.array([D_h_2h, D_h_2hp1])
 
-        # Calculate interfacial normal unit vectors
-        # Eq. (51) in Shen and Nakamura (2014)
-        cos_eta_i_2h = np.array([Decimal(1.0), Decimal(1.0), Decimal(1.0)]) * A_0_det \
-                         * inverse_den(abs(A_0_det)) \
-                         * inverse_den(dummy_2h)
-        cos_eta_i_2h = cos_eta_i_2h \
-                    * np.array([B_01_2h_det, B_02_2h_det, B_03_2h_det])
-        cos_eta_i_2hp1 = np.array([Decimal(1.0), Decimal(1.0), Decimal(1.0)]) * A_0_det \
-                        * inverse_den(abs(A_0_det)) \
-                        * inverse_den(dummy_2hp1)
-        cos_eta_i_2hp1 = cos_eta_i_2hp1 \
-                    * np.array([B_01_2hp1_det, B_02_2hp1_det, B_03_2hp1_det])
+            # Calculate interfacial normal unit vectors
+            # Eq. (51) in Shen and Nakamura (2014)
+            cos_eta_i_2h = np.array([Decimal(1.0), Decimal(1.0), Decimal(1.0)]) * A_0_det \
+                             * inverse_den(abs(A_0_det)) \
+                             * inverse_den(dummy_2h)
+            cos_eta_i_2h = cos_eta_i_2h \
+                        * np.array([B_01_2h_det, B_02_2h_det, B_03_2h_det])
+            cos_eta_i_2hp1 = np.array([Decimal(1.0), Decimal(1.0), Decimal(1.0)]) * A_0_det \
+                            * inverse_den(abs(A_0_det)) \
+                            * inverse_den(dummy_2hp1)
+            cos_eta_i_2hp1 = cos_eta_i_2hp1 \
+                        * np.array([B_01_2hp1_det, B_02_2hp1_det, B_03_2hp1_det])
 
-        bubble_props['if_norm_unit_vecs'] = [cos_eta_i_2h, cos_eta_i_2hp1]
+            # Store the computed bubble properties
+            bubble_props['velocity'] = np.array([V_bh_x, V_bh_y, V_bh_z])
+            bubble_props['diameter'] = np.array([D_h_2h, D_h_2hp1])
+            bubble_props['if_norm_unit_vecs'] = [cos_eta_i_2h, cos_eta_i_2hp1]
 
-        # Calculate the local Interfacial Area Concentration (IAC)
-        # Eq. (54) in Shen and Nakamura (2014)
-        # Sampling duration Omega
-        Omega = Decimal(t_signal[-1]) - Decimal(t_signal[0])
-        dummy_A = A_01_h_det*A_01_h_det + A_02_h_det*A_02_h_det + A_03_h_det*A_03_h_det
-        dummy_B = (B_01_2h_det*B_01_2h_det \
-                    + B_02_2h_det*B_02_2h_det \
-                    + B_03_2h_det*B_03_2h_det).sqrt()
-        dummy_AB = abs(A_0_det * (A_01_h_det*B_01_2h_det \
-                                + A_02_h_det*B_02_2h_det \
-                                + A_03_h_det*B_03_2h_det))
-        iac_h = dummy_A * dummy_B * inverse_den(dummy_AB)
-        iac += Decimal(2.0) / Omega * iac_h
+            # Calculate the local Interfacial Area Concentration (IAC)
+            # Eq. (54) in Shen and Nakamura (2014)
+            # Sampling duration Omega
+            Omega = Decimal(t_signal[-1]) - Decimal(t_signal[0])
+            dummy_A = A_01_h_det*A_01_h_det + A_02_h_det*A_02_h_det + A_03_h_det*A_03_h_det
+            dummy_B = (B_01_2h_det*B_01_2h_det \
+                        + B_02_2h_det*B_02_2h_det \
+                        + B_03_2h_det*B_03_2h_det).sqrt()
+            dummy_AB = abs(A_0_det * (A_01_h_det*B_01_2h_det \
+                                    + A_02_h_det*B_02_2h_det \
+                                    + A_03_h_det*B_03_2h_det))
+            iac_h = dummy_A * dummy_B * inverse_den(dummy_AB)
+            iac += Decimal(2.0) / Omega * iac_h
+
+        elif ra_type == "Tian_et_al_2015":
+            # Reconstruction algorithm of Tian et al. (2015)
+            # https://doi.org/10.1016/j.pnucene.2014.08.005
+
+            # Time differences between sensors 0 and k for interfaces 2h (front
+            # hemisphere) and 2h+1 (back hemisphere)
+            delta_t_0k_2h = {}
+            delta_t_0k_2hp1 = {}
+            delta_t_0k_mean = {}
+            # Time differences k=1,2,3,4 for interfaces 2h and 2h+1
+            delta_t_k_h = {}
+            delta_t_k_h[0] = Decimal(ifd_times['t_2h+1'][0]) - Decimal(ifd_times['t_2h'][0])
+
+            # 1. Reconstruct instantaneous local velocity
+            D0 = []
+            D1 = []
+            D2 = []
+            D3 = []
+            for k in aux_sensor_ids:
+                # Time differences
+                delta_t_0k_2h[k] = Decimal(ifd_times['t_2h'][k]) \
+                                 - Decimal(ifd_times['t_2h'][0])
+                delta_t_0k_2hp1[k] = Decimal(ifd_times['t_2h+1'][k]) \
+                                   - Decimal(ifd_times['t_2h+1'][0])
+                delta_t_k_h[k] = Decimal(ifd_times['t_2h+1'][k]) \
+                               - Decimal(ifd_times['t_2h'][k])
+                # Mean time difference
+                delta_t_0k_mean[k] = (delta_t_0k_2h[k] + delta_t_0k_2hp1[k])/Decimal(2.0)
+                # Fill the matrices given in Eq. (17) in Tian et al. (2015)
+                D0.append(np.array([Decimal(S_0k[k][0]), Decimal(S_0k[k][1]), Decimal(S_0k[k][2])]))
+                D1.append(np.array([delta_t_0k_mean[k], Decimal(S_0k[k][1]), Decimal(S_0k[k][2])]))
+                D2.append(np.array([Decimal(S_0k[k][0]), delta_t_0k_mean[k], Decimal(S_0k[k][2])]))
+                D3.append(np.array([Decimal(S_0k[k][0]), Decimal(S_0k[k][1]), delta_t_0k_mean[k]]))
+
+            # Calculate matrix determinants
+            # Eq. (17) in Tian et al. (2015)
+            D0_det = calc_det(D0)
+            D1_det = calc_det(D1)
+            D2_det = calc_det(D2)
+            D3_det = calc_det(D3)
+
+            # Calculate instantaneous velocity magnitude and components
+            # Eq. (16) from Tian et al. (2015)
+            V =  np.sqrt((D0_det**2)/(D1_det**2 + D2_det**2 + D3_det**2))
+            # Eq. (16) from Tian et al. (2015)
+            alpha = Decimal(math.acos(max(min(V * D3_det / D0_det,Decimal(1.0)),Decimal(-1.0))))
+            sin_beta = D2_det / (D0_det * Decimal(math.sin(alpha)))
+            beta = Decimal(math.asin(sin_beta))
+            # if (sin_beta >= 0):
+            #     beta = math.acos(max(min(V * D1_det / D0_det,1.0),-1.0))
+            # else:
+            #     beta = 2*math.pi - math.acos(max(min(V * D1_det / D0_det,1.0),-1.0))
+            V_bh_x = V * Decimal(math.sin(alpha)) * Decimal(math.cos(beta))
+            V_bh_y = V * Decimal(math.sin(alpha)) * Decimal(math.sin(beta))
+            V_bh_z = V * Decimal(math.cos(alpha))
+
+            D_h_2h = math.nan
+            D_h_2hp1 = math.nan
+            cos_eta_i_2h = math.nan
+            cos_eta_i_2hp1 = math.nan
+            iac = math.nan
+
+            # Store the computed bubble properties
+            bubble_props['velocity'] = np.array([V_bh_x, V_bh_y, V_bh_z])
+            bubble_props['diameter'] = np.array([D_h_2h, D_h_2hp1])
+            bubble_props['if_norm_unit_vecs'] = [cos_eta_i_2h, cos_eta_i_2hp1]
+        else:
+            PRINTERRORANDEXIT(f'Reconstruction algorithm <{ra_type}> not found.')
+
         # Display progress
         if args.progress:
             printProgressBar(ii, len(bubbles_complete), prefix = 'Progress:', suffix = 'Complete', length = 50)
