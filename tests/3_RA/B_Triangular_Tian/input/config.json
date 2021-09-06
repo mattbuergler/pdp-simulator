@@ -1,0 +1,56 @@
+{
+    "FLOW_PROPERTIES": {
+        "mean_velocity":[5.0, 0.0, 0.0],
+        "turbulent_intensity": [0.1, 0.05, 0.05],
+        "integral_timescale": [0.01, 0.005, 0.005],
+        "bubbles": {
+            "shape": "sphere",
+            "size_distribution": "constant",
+            "diameter": 0.003
+        },
+        "void_fraction": 0.05,
+        "duration": 10.0,
+        "realization_frequency": 10000
+    },
+    "PROBE": {
+        "sampling_frequency": 50000,
+        "sensors": [
+            {
+                "id": 0,
+                "relative_location":[
+                    0.0,
+                    0.0,
+                    0.0
+                ]
+            },
+            {
+                "id": 1,
+                "relative_location":[
+                    0.001,
+                    0.0,
+                    0.0002
+                ]
+            },
+            {
+                "id": 2,
+                "relative_location":[
+                    0.001,
+                    -0.0001,
+                    -0.0001
+                ]
+            },
+            {
+                "id": 3,
+                "relative_location":[
+                    0.001,
+                    0.0001,
+                    -0.0001
+                ]
+            }
+        ]
+    },
+    "RECONSTRUCTION": {
+        "type": "Tian_et_al_2015"
+    },
+    "REPRODUCIBLE": "yes"
+}

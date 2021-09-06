@@ -459,10 +459,10 @@ def main():
                 # Mean time difference
                 delta_t_0k_mean[k] = (delta_t_0k_2h[k] + delta_t_0k_2hp1[k])/Decimal(2.0)
                 # Fill the matrices given in Eq. (17) in Tian et al. (2015)
-                D0.append(np.array([S_0k[k][0], S_0k[k][1], S_0k[k][2]]))
-                D1.append(np.array([delta_t_0k_mean[k], S_0k[k][1], S_0k[k][2]]))
-                D2.append(np.array([S_0k[k][0], delta_t_0k_mean[k], S_0k[k][2]]))
-                D3.append(np.array([S_0k[k][0], S_0k[k][1], delta_t_0k_mean[k]]))
+                D0.append(np.array([Decimal(S_0k[k][0]), Decimal(S_0k[k][1]), Decimal(S_0k[k][2])]))
+                D1.append(np.array([delta_t_0k_mean[k], Decimal(S_0k[k][1]), Decimal(S_0k[k][2])]))
+                D2.append(np.array([Decimal(S_0k[k][0]), delta_t_0k_mean[k], Decimal(S_0k[k][2])]))
+                D3.append(np.array([Decimal(S_0k[k][0]), Decimal(S_0k[k][1]), delta_t_0k_mean[k]]))
 
             # Calculate matrix determinants
             # Eq. (17) in Tian et al. (2015)
@@ -475,16 +475,16 @@ def main():
             # Eq. (16) from Tian et al. (2015)
             V =  np.sqrt((D0_det**2)/(D1_det**2 + D2_det**2 + D3_det**2))
             # Eq. (16) from Tian et al. (2015)
-            alpha = math.acos(max(min(V * D3_det / D0_det,Decimal(1.0)),Decimal(-1.0)))
-            sin_beta = D2_det / (D0_det * math.sin(alpha))
-            beta = math.asin(sin_beta)
+            alpha = Decimal(math.acos(max(min(V * D3_det / D0_det,Decimal(1.0)),Decimal(-1.0))))
+            sin_beta = D2_det / (D0_det * Decimal(math.sin(alpha)))
+            beta = Decimal(math.asin(sin_beta))
             # if (sin_beta >= 0):
             #     beta = math.acos(max(min(V * D1_det / D0_det,1.0),-1.0))
             # else:
             #     beta = 2*math.pi - math.acos(max(min(V * D1_det / D0_det,1.0),-1.0))
-            V_bh_x = V * math.sin(alpha) * math.cos(beta)
-            V_bh_y = V * math.sin(alpha) * math.sin(beta)
-            V_bh_z = V * math.cos(alpha)
+            V_bh_x = V * Decimal(math.sin(alpha)) * Decimal(math.cos(beta))
+            V_bh_y = V * Decimal(math.sin(alpha)) * Decimal(math.sin(beta))
+            V_bh_z = V * Decimal(math.cos(alpha))
 
             D_h_2h = math.nan
             D_h_2hp1 = math.nan
