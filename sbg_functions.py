@@ -226,10 +226,10 @@ def SBG_fluid_velocity(path, flow_properties, reproducible, progress):
     # Zero mean
     mean = [0.0, 0.0, 0.0]
     # Zero Z-Components of covariance in a statistically 2D flow (Pope, 2000)
-    pXZ = 0.0
+    pXZ = -0.45
     pYZ = 0.0
     # rho_{uv}=-0.45 at y+~98 (Table 7.2 Pope, 2000)
-    pXY = -0.45
+    pXY = 0.0
     # Covariance with diagonal components = 1
     cov = [[1.0, pXY, pXZ], \
            [pXY, 1.0, pYZ], \
@@ -322,7 +322,7 @@ def SBG_fluid_velocity(path, flow_properties, reproducible, progress):
     writer.writeDataSet('fluid/reynold_stresses', \
         mean_reynolds_stress, 'float64')
     writer.writeDataSet('fluid/turbulent_intensity', \
-        mean_reynolds_stress, 'float64')
+        turbulent_intensity, 'float64')
     flow_props = str(flow_properties)
     writer.writeStringDataSet('.flow_properties', flow_props)
     writer.close()
