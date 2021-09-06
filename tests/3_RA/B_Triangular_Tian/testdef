@@ -24,27 +24,6 @@
       "tag": "compare reconstructed velocity time series",
       "rel": 1e-6,
       "abs": 1e-6
-    },
-    {
-      "file": "reconstructed.h5",
-      "dataset" : "bubbles/diameters",
-      "tag": "compare reconstructed bubble diameters",
-      "rel": 1e-6,
-      "abs": 1e-6
-    },
-    {
-      "file": "reconstructed.h5",
-      "dataset" : "voidFraction",
-      "tag": "compare reconstructed void fraction",
-      "rel": 1e-6,
-      "abs": 1e-6
-    },
-    {
-      "file": "reconstructed.h5",
-      "dataset" : "IAC",
-      "tag": "compare reconstructed interfacial area concentration",
-      "rel": 1e-6,
-      "abs": 1e-6
     }
   ]
 }
