@@ -78,11 +78,15 @@ if __name__ != "main":
     )
     parser.add_argument('-tsa', '--velocity_tsa', action='store_true',
         help="Vizualize the results.", default=False)
+    parser.add_argument('-roc', '--ROC', default=False,
+        help='Perform robust outlier cutoff (ROC) based on the maximum' +
+                'absolute deviation and the universal threshold (True/False).')
     args = vars(parser.parse_args())
     start_time = time.time()
     errors = 0
     config = {}
     config['velocity_tsa'] = args["velocity_tsa"]
+    config['ROC'] = args["ROC"]
     config['bin'] = args["bin"]
 
     runner = TestRunner(config)

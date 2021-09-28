@@ -328,7 +328,7 @@ def SBG_fluid_velocity(path, flow_properties, reproducible, progress):
     writer.close()
     time2 = time.time()
     print(f'Successfully written fluid velocity time series and trajectory')
-    print(f'Finished in {time2-time1} seconds\n')
+    print(f'Finished in {time2-time1:.2f} seconds\n')
 
 def SBG_bubble_velocity(path, flow_properties, progress):
     """Calculate the bubble velocity based on a force balance equation between drag and virtual mass acting on the bubble by the fluid.
@@ -429,7 +429,7 @@ def SBG_bubble_velocity(path, flow_properties, progress):
     writer.close()
     time2 = time.time()
     print(f'Successfully written bubble velocity time series and trajectory')
-    print(f'Finished in {time2-time1} seconds\n')
+    print(f'Finished in {time2-time1:.2f} seconds\n')
 
 def SBG_interp_trajectory(
     t_traj,
@@ -608,4 +608,4 @@ def SBG_signal(
     writer.close()
     time2 = time.time()
     print(f'Successfully generated the signal')
-    print(f'Finished in {time2-time1} seconds\n')
+    print(f'Finished in {time2-time1:.2f} seconds\n')

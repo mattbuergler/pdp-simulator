@@ -345,7 +345,10 @@ class TestDefinition:
                         elif doubleProg.search(item):
                             dataLine.append(float(item))
                     else:
-                        dataLine.append(item)
+                        if (item == 'nan'):
+                            dataLine.append(float(item))
+                        else:
+                            dataLine.append(item)
                 if len(dataLine) > 0:
                     ret.append(dataLine)
         if len(ret) == 0:

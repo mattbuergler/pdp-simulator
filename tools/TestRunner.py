@@ -36,6 +36,7 @@ class TestRunner:
 
     def __init__(self, config):
         self.velocity_tsa = config['velocity_tsa']
+        self.roc = config['ROC']
         self.bin = config['bin']
         self.tests = []  # type: typing.List[str]
 
@@ -269,8 +270,10 @@ class TestRunner:
             str(pathlib.Path(self.bin) / "mssrc.py"),
             "-vel",
             str(mag_vel),
+            "-roc",
+            str(self.roc),
             "."
-        ]
+            ]
         return self.runCommon(cmd, testDirectory, "a")
 
 

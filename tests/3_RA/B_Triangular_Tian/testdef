@@ -1,5 +1,5 @@
 {
-  "SBG": "",
+  "SBG": "all",
   "RA": "yes",
   "eval": "",
   "files":
@@ -22,6 +22,13 @@
       "file": "reconstructed.h5",
       "dataset" : "bubbles/velocity",
       "tag": "compare reconstructed velocity time series",
+      "rel": 1e-6,
+      "abs": 1e-6
+    },
+    {
+      "file": "reconstructed.h5",
+      "dataset" : "voidFraction",
+      "tag": "compare reconstructed void fraction",
       "rel": 1e-6,
       "abs": 1e-6
     }

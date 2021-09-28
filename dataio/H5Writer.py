@@ -32,13 +32,16 @@ class H5Writer(H5Base):
 
     def write2DataSet(self, path, data, row, col):
         rows = data.shape[0]
-        cols = data.shape[1]
         ds = self.getDataSet(path)
-        col_start = col
-        col_end = col_start + cols
         row_start = row
         row_end = row_start + rows
-        ds[row_start:row_end, col_start:col_end] = data
+        if len(data.shape) > 1:
+            cols = data.shape[1]
+            col_start = col
+            col_end = col_start + cols
+            ds[row_start:row_end, col_start:col_end] = data
+        else:
+            ds[row_start:row_end] = data
 
     def writeStringDataSet(self, path, string):
         asciiString = string.encode("ascii", "ignore")
