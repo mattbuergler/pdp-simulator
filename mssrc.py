@@ -541,13 +541,13 @@ def main():
         print('\nRunning reconstruction algorithm....\n')
         # Initialize the Interfacial Area Concentration (IAC)
         iac = Decimal(0.0)
-        # Loop over complete bubbles
-        for ii,bubble_props in enumerate(bubbles_complete):
-            ifd_times = bubble_props['ifd_times']
 
-            if ra_type == "Shen_Nakamura_2014":
-                # Reconstruction algorithm of Shen and Nakamura (2014)
-                # https://doi.org/10.1016/j.ijmultiphaseflow.2013.11.010
+        # Reconstruction algorithm of Shen and Nakamura (2014)
+        # https://doi.org/10.1016/j.ijmultiphaseflow.2013.11.010
+        if ra_type == "Shen_Nakamura_2014":
+            # Loop over complete bubbles
+            for ii,bubble_props in enumerate(bubbles_complete):
+                ifd_times = bubble_props['ifd_times']
 
                 # Time differences between sensors 0 and k for interfaces 2h and 2h+1
                 delta_t_0k_2h = {}
@@ -683,9 +683,12 @@ def main():
                 iac_h = dummy_A * dummy_B * inverse_den(dummy_AB)
                 iac += Decimal(2.0) / Omega * iac_h
 
-            elif ra_type == "Tian_et_al_2015":
-                # Reconstruction algorithm of Tian et al. (2015)
-                # https://doi.org/10.1016/j.pnucene.2014.08.005
+        # Reconstruction algorithm of Tian et al. (2015)
+        # https://doi.org/10.1016/j.pnucene.2014.08.005
+        elif ra_type == "Tian_et_al_2015":
+            # Loop over complete bubbles
+            for ii,bubble_props in enumerate(bubbles_complete):
+                ifd_times = bubble_props['ifd_times']
 
                 # Time differences between sensors 0 and k for interfaces 2h (front
                 # hemisphere) and 2h+1 (back hemisphere)
@@ -749,8 +752,8 @@ def main():
                 bubble_props['velocity'] = np.array([V_bh_x, V_bh_y, V_bh_z])
                 bubble_props['diameter'] = np.array([D_h_2h, D_h_2hp1])
                 bubble_props['if_norm_unit_vecs'] = [cos_eta_i_2h, cos_eta_i_2hp1]
-            else:
-                PRINTERRORANDEXIT(f'Reconstruction algorithm <{ra_type}> not valid for 4-tip probes.')
+        else:
+            PRINTERRORANDEXIT(f'Reconstruction algorithm <{ra_type}> not valid for 4-tip probes.')
 
             # Display progress
             if args.progress:
