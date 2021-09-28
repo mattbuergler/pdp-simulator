@@ -730,17 +730,11 @@ def main():
                 # Calculate instantaneous velocity magnitude and components
                 # Eq. (16) from Tian et al. (2015)
                 V =  np.sqrt((D0_det**2)/(D1_det**2 + D2_det**2 + D3_det**2))
-                # Eq. (16) from Tian et al. (2015)
-                alpha = Decimal(math.acos(max(min(V * D3_det / D0_det,Decimal(1.0)),Decimal(-1.0))))
-                sin_beta = D2_det / (D0_det * Decimal(math.sin(alpha)))
-                beta = Decimal(math.asin(sin_beta))
-                # if (sin_beta >= 0):
-                #     beta = math.acos(max(min(V * D1_det / D0_det,1.0),-1.0))
-                # else:
-                #     beta = 2*math.pi - math.acos(max(min(V * D1_det / D0_det,1.0),-1.0))
-                V_bh_x = V * Decimal(math.sin(alpha)) * Decimal(math.cos(beta))
-                V_bh_y = V * Decimal(math.sin(alpha)) * Decimal(math.sin(beta))
-                V_bh_z = V * Decimal(math.cos(alpha))
+
+                # Eq. (15) from Tian et al. (2015)
+                V_bh_x = V * V * D1_det / D0_det
+                V_bh_y = V * V * D2_det / D0_det
+                V_bh_z = V * V * D3_det / D0_det
 
                 D_h_2h = math.nan
                 D_h_2hp1 = math.nan
@@ -836,7 +830,7 @@ def main():
     ds_d.attrs['labels'] = ['D_h_2h', 'D_h_2hp1']
     # Create the IAC and void_fraction datasets
     writer.writeDataSet('IAC', np.array([iac],dtype='float64'), 'float64')
-    writer.writeDataSet('voidFraction', np.array([np.mean(signal)]), 'float64')
+    writer.writeDataSet('voidFraction', np.array([np.mean(signal[:,0])]), 'float64')
     writer.close()
     time2 = time.time()
     print(f'Successfully run the reconstruction algorithm')
