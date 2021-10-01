@@ -17,6 +17,7 @@ import sys
 import decimal
 from scipy import signal
 from decimal import *
+from itertools import combinations
 try:
     from dataio.H5Writer import H5Writer
     from dataio.H5Reader import H5Reader
@@ -40,6 +41,8 @@ except ImportError:
 
 # Define global variables
 COEFF_0 = Decimal(0.3)   # Eq. (43) in Shen et al. (2005): low limit constant
+V_GAS = Decimal(0.0)
+
 
 def inverse_den(x):
     """
@@ -207,6 +210,32 @@ def velocity(n_lags, delta_x, f_sample, S1, S2):
         SPR_nofilter = np.nan
     return Vx,Rxymax,SPR,Vx_nofilter,Rxymax_nofilter,SPR_nofilter
 
+def evaluate_filtering(path, SPR, Rxymax, uinst):
+    """
+        Evaluate the cross-correlation based filtering approach by plotting the
+        figure.
+
+        path:       the path to store files
+        SPR:        Secondary peak ratios
+        Rxymax:     Maximum cross-correlations
+        uinst:      Velocities 
+    """
+
+    spr_ineq = np.linspace(0.0,1.0,1000)
+    rmax_ineq = 0.4*(np.square(spr_ineq) + 1.0)
+    fig, ax = plt.subplots(1,1,figsize=(4,2.88))
+    sc = plt.scatter(SPR,Rxymax,c=uinst,cmap='viridis')
+    plt.plot(spr_ineq,rmax_ineq,color='k')
+    ax.set_ylabel(r'$R_{\mathrm{12},i,\mathrm{max}}$ [-]')
+    ax.set_xlabel(r'SPR$_i$ [-]')
+    ax.set_xlim([0.0,1.0])
+    ax.set_ylim([0.0,1.0])
+    ax.grid()
+    cbar = plt.colorbar(sc)
+    cbar.set_label(r'$U_x$ [m/s]', rotation=90)
+    plt.subplots_adjust(left=0.16, bottom=0.15, right=0.88, top=0.98, wspace=0.2, hspace=0.3)
+    fig.savefig(path / 'SPR_R12max.svg',dpi=300)
+
 def roc(u):
     """
         Robust outlier cutoff based on the maximum absolute deviation and the 
@@ -239,6 +268,504 @@ def roc(u):
             u_filt[ii,:] = u[ii,:]
     return u_filt
 
+def run_sig_proc_awcc(path, args, config, sensor_ids, t_signal, signal):
+    """
+        Averaging Windows Cross-Correlation signal processing for dual-tip
+        probes.
+
+        path:       the velocity time series
+        args:       the arguments from the CL-parser
+        config:     the configuration JSON-file
+        sensor_ids: IDs of the sensors
+        t_signal:   the time series of the signal
+        signal:     the signal
+    """
+
+    # get the number of particles per averaging windows
+    n_particles = config['RECONSTRUCTION']['n_particles']
+    # the sampling frequency
+    f_sample = config['PROBE']['sampling_frequency']
+    sensors = config['PROBE']['sensors']
+    delta_x = abs(sensors[1]['relative_location'][0] - sensors[0]['relative_location'][0])
+    # the sampling duration
+    duration = Decimal(t_signal[-1])-Decimal(t_signal[0])
+    # get the chord lengths in terms of number of samples
+    # chord length [s] = chord length / f_sample
+    print('Determining the air and water chord.\n\n')
+    chord_w,chord_a,F1 = chord(signal[:,0],duration, progress=args.progress)
+    print('Determining the windows.\n\n')
+    n_windows,start,stop,t = windows(chord_a,chord_w,n_particles,f_sample, progress=args.progress)
+    
+    # initialize some variables
+    n_lags = np.empty(n_windows, dtype='int8')*-99999       # dummy multiplication to avoid access error
+    cinstloop = np.empty(n_windows)
+    finstloop = np.empty(n_windows)
+    uinstloop = np.empty(n_windows)
+    Rxymaxloop = np.empty(n_windows)
+    SPRloop = np.empty(n_windows)
+    uinstloop_nofilter = np.empty(n_windows)
+    Rxymaxloop_nofilter = np.empty(n_windows)
+    SPRloop_nofilter = np.empty(n_windows)
+
+    # loop over windows
+    print('Calculating the velocity for all windows.\n\n')
+    for ii in range(0,n_windows-1):
+        n_lags[ii] = int(stop[ii] - start[ii])              # lags correspond to time windows
+        S1 = signal[start[ii]:stop[ii],0]                   # raw signals leading tip
+        S2 = signal[start[ii]:stop[ii],1]                   # raw signals trailing tip
+        cinstloop[ii] = np.mean(S1)                         # void fraction inside a window
+        _,_,finstloop[ii] = chord(S1,(n_lags[ii]/f_sample)) # get F inside a window
+        uinstloop[ii],Rxymaxloop[ii],SPRloop[ii],uinstloop_nofilter[ii],Rxymaxloop_nofilter[ii],SPRloop_nofilter[ii] = velocity(n_lags[ii],delta_x,f_sample,S1,S2) # pseudo-instantaneous velocities
+        # Display progress
+        if args.progress:
+            printProgressBar(ii, n_windows, prefix = 'Progress:', suffix = 'Complete', length = 50)
+
+    # plot the figure for evaluation of the filtering
+    evaluate_filtering(path, SPRloop_nofilter, Rxymaxloop_nofilter, uinstloop_nofilter)
+
+    # save some data for further use
+    np.savetxt(path / 'SPR.csv', SPRloop_nofilter, delimiter=',')
+    np.savetxt(path / 'R12max.csv', Rxymaxloop_nofilter, delimiter=',')
+    np.savetxt(path / 'U.csv', uinstloop_nofilter, delimiter=',')
+
+    # store as bubble properties
+    bubbles = []
+    for ii in range(0,len(uinstloop)):
+        ifd_times = pd.DataFrame(index=sensor_ids, columns=['t_2h','t_2h+1'])
+        ifd_times['t_2h'][0] = start[ii]/f_sample
+        ifd_times['t_2h+1'][0] = stop[ii]/f_sample
+        ifd_times['t_2h'][1] = start[ii]/f_sample
+        ifd_times['t_2h+1'][1] = stop[ii]/f_sample
+        bubble_props = {'ifd_times':ifd_times}
+        bubble_props['velocity'] = np.array([uinstloop[ii],0.0, 0.0])
+        bubble_props['diameter'] = np.array([0.0, 0.0])
+        bubble_props['if_norm_unit_vecs'] = [np.array([0.0, 0.0, 0.0]), \
+                                            np.array([0.0, 0.0, 0.0])]
+        bubbles.append(bubble_props)
+
+    return bubbles
+
+def get_sensor_distance_vectors(config):
+    """
+        Calculates the distance vectors between the leading tip (0) and the
+        trailing tips (k).
+
+        config:     the configuration JSON-file
+    """
+
+    # Get sensors from config file
+    # Eq. (1) Shen and Nakamura (2014): distance vectors S_0k from the central
+    # front sensor tip (0) to any of the three peripheral rear sensor tips k
+    S_k = {}
+    S_0k = {}
+    S_0k_mag = {}
+    cos_eta_0k = {}
+    aux_sensor_ids = []
+    max_t_k = {}
+    sensors = config['PROBE']['sensors']
+    for sensor in sensors:
+        # Get the sensor ID
+        s_id = sensor['id']
+        # Get relative location vectors
+        S_k[s_id] = np.asarray(sensor['relative_location'],dtype='str')
+    for sensor in sensors:
+        # Get the sensor ID
+        s_id = sensor['id']
+        if s_id != 0:
+            aux_sensor_ids.append(s_id)
+            # Set the distance vectors
+            S_0k[s_id] = np.array([Decimal(S_k[s_id][0])-Decimal(S_k[0][0]),
+                                   Decimal(S_k[s_id][1])-Decimal(S_k[0][1]),
+                                   Decimal(S_k[s_id][2])-Decimal(S_k[0][2])],
+                                  dtype='str')
+            # Calculate magnitudes
+            S_0k_mag[s_id] = (Decimal(S_0k[s_id][0]) * Decimal(S_0k[s_id][0])
+                            + Decimal(S_0k[s_id][1]) * Decimal(S_0k[s_id][1])
+                            + Decimal(S_0k[s_id][2]) * Decimal(S_0k[s_id][2])).sqrt()
+            # Calculate cos of angles between vector S0k and (x,y,z)-axis
+            tmp = []
+            for ii in range(0,3):
+                tmp.append(Decimal(S_0k[s_id][ii]) / S_0k_mag[s_id])
+            cos_eta_0k[s_id] = tmp
+            # Determine valid range for lag between signal of sensors 0
+            # and signal of sensor k from Eq. (43) in Shen et al. (2005)
+            max_t_k[s_id] = S_0k_mag[s_id] / (COEFF_0 * V_GAS)
+
+    return aux_sensor_ids, max_t_k, S_0k_mag, S_0k, cos_eta_0k
+
+def run_event_detection(args, aux_sensor_ids, max_t_k, sensor_ids, t_signal, signal):
+    """
+        This is the event-detection (ED) algorithm, based on interface pairing.
+        The algorithm matches the interface detection by the leading and 
+        trailing tip(s) of the probe for each individual particle-probe 
+        interaction.
+
+        args:           the arguments from the CL-parser
+        aux_sensor_ids: the auxillary (or trailing) sensor ids
+        max_t_k:        valid range for lags between signal of sensors 0 and signal of sensor k
+        sensor_ids:     IDs of the sensors
+        t_signal:       the time series of the signal
+        signal:         the signal
+    """
+
+    print('\nStarting event-detection algorithm....\n')
+    # Create interface-detection (IFD) signal by first order difference
+    signal_ifd = signal[1:len(signal)] - signal[0:(len(signal)-1)]
+    # Get average time for each difference
+    # Multiply and divide by the conjugate expression to avoid loss
+    # of significance
+
+    t_signal_ifd_list = []
+    for ii in range(0,len(t_signal)-1):
+        t_signal_ifd_list.append(str(Decimal(t_signal[ii]) \
+            + (Decimal(t_signal[ii+1])-Decimal(t_signal[ii]))/Decimal(2.0)))
+
+    # Interface-pairing signal-processing scheme
+    # Shen et al. (2005)
+    # Get the column number of the main sensor 0, just in case the order gets
+    # messed up along the process
+    id0 = np.where(sensor_ids == 0)[0][0]
+    # Indices of the rising IFD signals for main sensor 0
+    signal_ifd_rise_0 = np.where(signal_ifd[:,id0] > 0.0)[0]
+    # Initialize lists to store bubbles
+    bubbles = []
+    print('\nChecking for complete bubbles....\n')
+    # Loop over rising signal fronts of main sensor 0 and do interface pairing
+    for ii,idx_rise_0 in enumerate(signal_ifd_rise_0):
+        # DataFrame with time of IFD of front (2h) and rear (2h+1) bubble
+        # interface for each sensor
+        ifd_times = pd.DataFrame(index=sensor_ids, columns=['t_2h','t_2h+1'])
+        # Main Sensor 0
+        # Write t_2h of sensor 0
+        ifd_times['t_2h'][0] = t_signal_ifd_list[idx_rise_0]
+
+        # Search for t_2h+1
+        # Indices of the falling IFD signals for main sensor 0
+        signal_ifd_fall_0 = np.where(signal_ifd[:,id0] < 0.0)[0]
+        # Index of the falling IFD signal for main sensor 0
+        idx_fall_0 = min(signal_ifd_fall_0[signal_ifd_fall_0 > idx_rise_0])
+        # Write t_b+1 of sensor 0
+        ifd_times['t_2h+1'][0] = t_signal_ifd_list[idx_fall_0]
+        # Auxillary sensors k
+        for k in aux_sensor_ids:
+            idk = np.where(sensor_ids == k)[0][0]
+            # Check if sensor is currently in air (1) or water (0) to determine
+            # the search direction in time (backward or forward)
+            phase = signal[idx_rise_0, idk]
+            if phase == 0:
+                # Sensor k is currently in water phase -> search forward
+                # Rising IFD signal
+                # Indices of the rising IFD signals for aux. sensor k
+                signal_ifd_rise_k = np.where(signal_ifd[:,idk] > 0.0)[0]
+                # Ahead of rising IFD signal of sensor 0
+                signal_ifd_rise_k = signal_ifd_rise_k[signal_ifd_rise_k > idx_rise_0]
+                # Index of the rising IFD signal for aux. sensor k closest to
+                # idx_rise_0
+                if len(signal_ifd_rise_k) > 0:
+                    idx_rise_k = min(signal_ifd_rise_k)
+                else:
+                    # no rising IFD signal before t_2h of main sensor, NaN
+                    idx_rise_k = np.nan
+
+            elif phase == 1:
+                # Sensor k is currently in air phase -> search backward
+                # Rising IFD signal
+                # Indices of the rising IFD signals for aux. sensor k
+                signal_ifd_rise_k = np.where(signal_ifd[:,idk] > 0.0)[0]
+                # Behind of rising IFD signal of sensor 0
+                signal_ifd_rise_k = signal_ifd_rise_k[signal_ifd_rise_k <= idx_rise_0]
+
+                # Index of the rising IFD signal for aux. sensor k closest to
+                # idx_rise_0
+                if len(signal_ifd_rise_k) > 0:
+                    idx_rise_k = max(signal_ifd_rise_k)
+                else:
+                    # no rising IFD signal before t_2h of main sensor, NaN
+                    idx_rise_k = np.nan
+            # Search for t_2h+1 of sensor k
+            if not np.isnan(idx_rise_k):
+                # Indices of the falling IFD signals for main sensor k
+                signal_ifd_fall_k = np.where(signal_ifd[:,idk] < 0.0)[0]
+                signal_ifd_fall_k = signal_ifd_fall_k[signal_ifd_fall_k > idx_rise_k]
+                # Index of the falling IFD signal for main sensor k
+                idx_fall_k = min(signal_ifd_fall_k)
+            else:
+                idx_fall_k = np.nan
+
+            # Store the time of IFD of front (2h) and rear (2h+1) bubble
+            # interface for each sensor
+            # Write t_2h of sensor k
+            if not np.isnan(idx_rise_k):
+                ifd_times['t_2h'][k] = t_signal_ifd_list[idx_rise_k]
+            else:
+                ifd_times['t_2h'][k] = np.nan
+            # Write t_2h+1 of sensor k
+            if not np.isnan(idx_fall_k):
+                ifd_times['t_2h+1'][k] = t_signal_ifd_list[idx_fall_k]
+            else:
+                ifd_times['t_2h+1'][k] = np.nan
+
+        # Check for each sensor if IFD times of front (2h) and rear (2h+1)
+        # interface fall within the range for the lag between signal of sensors 0
+        # and signal of sensor k from Eq. (42) in Shen et al. (2005)
+        aux_sensors_complete = []
+        for k in aux_sensor_ids:
+            ok = True
+            # first interface (2h)
+            lag_2h = abs(Decimal(ifd_times['t_2h'][0]) - Decimal(ifd_times['t_2h'][k]))
+            if lag_2h.compare(max_t_k[k]) == 1:
+                # lag too large
+                ifd_times['t_2h'][k] = np.nan
+                ok = False
+            # second interface (2h+1)
+            lag_2hp1 = abs(Decimal(ifd_times['t_2h+1'][0]) - Decimal(ifd_times['t_2h+1'][k]))
+            if lag_2hp1.compare(max_t_k[k]) == 1:
+                # lag too large
+                ifd_times['t_2h+1'][k] = np.nan
+                ok = False
+            # store IDs of sensors which recorded a valid signal
+            if ok:
+                aux_sensors_complete.append(k)
+
+        # store sensors with valid signal as bubble property
+        bubble_props = {'aux_sensors_complete':aux_sensors_complete}
+
+        # Store the interface detection times for complete and
+        # incomplete bubbles
+        bubble_props['ifd_times'] = ifd_times
+
+        bubbles.append(bubble_props)
+        # Display progress
+        if args.progress:
+            printProgressBar(ii, len(signal_ifd_rise_0), prefix = 'Progress:', suffix = 'Complete', length = 50)
+
+    return bubbles
+
+def run_sig_proc_shen(args, aux_sensor_ids, bubble_props, S_0k_mag, cos_eta_0k):
+    """
+        This is signal processing algorithm of Shen & Nakamura (2014).
+
+        Shen, X., Nakamura, H. (2014). Spherical-bubble-based four-sensor probe
+        signal processing algorithm for two-phase flow measurement. 
+        International journal of multiphase flow, 60, 11-29.
+        https://doi.org/10.1016/j.ijmultiphaseflow.2013.11.010
+
+        args:           the arguments from the CL-parser
+        aux_sensor_ids: auxillary (or trailing) sensor ids
+        bubble_props:   bubble properties
+        S_0k_mag:       magnitudes of the distance vectors between trailing
+                        and leading tips
+        cos_eta_0k:     unit distance vectors
+    """
+
+    ifd_times = bubble_props['ifd_times']
+
+    # Time differences between sensors 0 and k for interfaces 2h and 2h+1
+    delta_t_0k_2h = {}
+    delta_t_0k_2hp1 = {}
+    # Time differences k=1,2,3,4 for interfaces 2h and 2h+1
+    delta_t_k_h = {}
+    delta_t_k_h[0] = Decimal(ifd_times['t_2h+1'][0]) - Decimal(ifd_times['t_2h'][0])
+
+    # 1. Reconstruct instantaneous local velocity
+    # Inverse of measurable displacement velocity of the h-th bubble
+    # for sensor 0 and k
+    V_m0k_h_inv = {}
+    E_0k_2h = {}
+    E_0k_2hp1 = {}
+    A_0 = []
+    A_01_h = []
+    A_02_h = []
+    A_03_h = []
+    B_01_2h = []
+    B_02_2h = []
+    B_03_2h = []
+    B_01_2hp1 = []
+    B_02_2hp1 = []
+    B_03_2hp1 = []
+
+    for k in aux_sensor_ids:
+        # Time differences
+        # Eq. (2) from Shen and Nakamura (2014)
+        delta_t_0k_2h[k] = Decimal(ifd_times['t_2h'][k]) \
+                         - Decimal(ifd_times['t_2h'][0])
+        delta_t_0k_2hp1[k] = Decimal(ifd_times['t_2h+1'][k]) \
+                           - Decimal(ifd_times['t_2h+1'][0])
+        # Eq. (3) from Shen and Nakamura (2014)
+        delta_t_k_h[k] = Decimal(ifd_times['t_2h+1'][k]) \
+                       - Decimal(ifd_times['t_2h'][k])
+        # Measurable displacement velocity
+        # Eq. (30) from Shen and Nakamura (2014)
+        V_m0k_h_inv[k] = (delta_t_0k_2h[k] + delta_t_0k_2hp1[k]) \
+                    / (Decimal(2.0) * Decimal(S_0k_mag[k]))
+        A_0.append(cos_eta_0k[k])
+        A_01_h.append(np.array([V_m0k_h_inv[k], cos_eta_0k[k][1], cos_eta_0k[k][2]]))
+        A_02_h.append(np.array([cos_eta_0k[k][0], V_m0k_h_inv[k], cos_eta_0k[k][2]]))
+        A_03_h.append(np.array([cos_eta_0k[k][0], cos_eta_0k[k][1], V_m0k_h_inv[k]]))
+
+    # Calculate matrix determinants
+    # Eq. (32) to (35) from Shen and Nakamura (2014)
+    A_0_det = calc_det(A_0)
+    A_01_h_det = calc_det(A_01_h)
+    A_02_h_det = calc_det(A_02_h)
+    A_03_h_det = calc_det(A_03_h)
+    # Calculate instantaneous velocity magnitude and components
+    dummy = (A_01_h_det* A_01_h_det + A_02_h_det*A_02_h_det + A_03_h_det*A_03_h_det).sqrt()
+    # Eq. (37) from Shen and Nakamura (2014)
+    V_bh_mag =  abs(A_0_det) * inverse_den(dummy)
+    # Eq. (36) from Shen and Nakamura (2014)
+    V_bh_x = V_bh_mag * V_bh_mag * A_01_h_det * inverse_den(A_0_det)
+    V_bh_y = V_bh_mag * V_bh_mag * A_02_h_det * inverse_den(A_0_det)
+    V_bh_z = V_bh_mag * V_bh_mag * A_03_h_det * inverse_den(A_0_det)
+    velocity = np.array([V_bh_x, V_bh_y, V_bh_z])
+
+    # 2. Reconstruct bubble diameter and interfacial normal unit vector
+    # measurement
+    E_0k_2h = {}
+    E_0k_2hp1 = {}
+    B_01_2h = []
+    B_02_2h = []
+    B_03_2h = []
+    B_01_2hp1 = []
+    B_02_2hp1 = []
+    B_03_2hp1 = []
+    for k in aux_sensor_ids:
+        # Chord lengths of interfaces 2h and 2h+1
+        # Eq. (43) and (44) in Shen and Nakamura (2014)
+        E_0k_2h[k] = V_bh_mag*V_bh_mag * delta_t_0k_2h[k] \
+                    * (delta_t_0k_2hp1[k] + delta_t_k_h[0]) / S_0k_mag[k] \
+                    - S_0k_mag[k]
+        E_0k_2hp1[k] = V_bh_mag*V_bh_mag * delta_t_0k_2hp1[k] \
+                    * (delta_t_0k_2h[k] - delta_t_k_h[0]) / S_0k_mag[k] \
+                    - S_0k_mag[k]
+        # Eq. (46) and (48) in Shen and Nakamura (2014)
+        B_01_2h.append(np.array([E_0k_2h[k], cos_eta_0k[k][1], cos_eta_0k[k][2]]))
+        B_02_2h.append(np.array([cos_eta_0k[k][0], E_0k_2h[k], cos_eta_0k[k][2]]))
+        B_03_2h.append(np.array([cos_eta_0k[k][0], cos_eta_0k[k][1], E_0k_2h[k]]))
+        B_01_2hp1.append(np.array([E_0k_2hp1[k], cos_eta_0k[k][1], cos_eta_0k[k][2]]))
+        B_02_2hp1.append(np.array([cos_eta_0k[k][0], E_0k_2hp1[k], cos_eta_0k[k][2]]))
+        B_03_2hp1.append(np.array([cos_eta_0k[k][0], cos_eta_0k[k][1], E_0k_2hp1[k]]))
+    # Calculate matrix determinants
+    # Eq. (46) and (48) in Shen and Nakamura (2014)
+    B_01_2h_det = calc_det(B_01_2h)
+    B_02_2h_det = calc_det(B_02_2h)
+    B_03_2h_det = calc_det(B_03_2h)
+    B_01_2hp1_det = calc_det(B_01_2hp1)
+    B_02_2hp1_det = calc_det(B_02_2hp1)
+    B_03_2hp1_det = calc_det(B_03_2hp1)
+
+    # Calculate the bubble diameter
+    dummy_2h = (B_01_2h_det*B_01_2h_det \
+                + B_02_2h_det*B_02_2h_det \
+                + B_03_2h_det*B_03_2h_det).sqrt()
+    dummy_2hp1 = (B_01_2hp1_det*B_01_2hp1_det \
+                + B_02_2hp1_det*B_02_2hp1_det \
+                + B_03_2hp1_det*B_03_2hp1_det).sqrt()
+    # Eq. (50) from Shen and Nakamura (2014)
+    D_h_2h = dummy_2h / A_0_det
+    D_h_2hp1 = dummy_2hp1 / A_0_det
+    diameter = np.array([D_h_2h, D_h_2hp1])
+
+    # Calculate interfacial normal unit vectors
+    # Eq. (51) in Shen and Nakamura (2014)
+    cos_eta_i_2h = np.array([Decimal(1.0), Decimal(1.0), Decimal(1.0)]) * A_0_det \
+                     * inverse_den(abs(A_0_det)) \
+                     * inverse_den(dummy_2h)
+    cos_eta_i_2h = cos_eta_i_2h \
+                * np.array([B_01_2h_det, B_02_2h_det, B_03_2h_det])
+    cos_eta_i_2hp1 = np.array([Decimal(1.0), Decimal(1.0), Decimal(1.0)]) * A_0_det \
+                    * inverse_den(abs(A_0_det)) \
+                    * inverse_den(dummy_2hp1)
+    cos_eta_i_2hp1 = cos_eta_i_2hp1 \
+                * np.array([B_01_2hp1_det, B_02_2hp1_det, B_03_2hp1_det])
+    if_norm_unit_vecs = [cos_eta_i_2h, cos_eta_i_2hp1]
+
+    # Calculate the local Interfacial Area Concentration (IAC)
+    # Eq. (54) in Shen and Nakamura (2014)
+    dummy_A = A_01_h_det*A_01_h_det + A_02_h_det*A_02_h_det + A_03_h_det*A_03_h_det
+    dummy_B = (B_01_2h_det*B_01_2h_det \
+                + B_02_2h_det*B_02_2h_det \
+                + B_03_2h_det*B_03_2h_det).sqrt()
+    dummy_AB = abs(A_0_det * (A_01_h_det*B_01_2h_det \
+                            + A_02_h_det*B_02_2h_det \
+                            + A_03_h_det*B_03_2h_det))
+    iac = dummy_A * dummy_B * inverse_den(dummy_AB)
+
+    return velocity, diameter, if_norm_unit_vecs, iac
+
+def run_sig_proc_tian(args, aux_sensor_ids, bubble_props, S_0k_mag, S_0k):
+    """
+        This is signal processing algorithm of Tian et al. (2015).
+
+        Tian, D., Yan, C., & Sun, L. (2015). Model of bubble velocity vector
+        measurement in upward and downward bubbly two-phase flows using a four-
+        sensor optical probe. Progress in nuclear energy, 78, 110-120.
+        https://doi.org/10.1016/j.pnucene.2014.08.005
+
+        args:           the arguments from the CL-parser
+        aux_sensor_ids: auxillary (or trailing) sensor ids
+        bubble_props:   bubble properties
+        S_0k_mag:       magnitudes of the distance vectors between trailing
+                        and leading tips
+        S_0k:           distance vectors
+    """
+
+    ifd_times = bubble_props['ifd_times']
+
+    # Time differences between sensors 0 and k for interfaces 2h (front
+    # hemisphere) and 2h+1 (back hemisphere)
+    delta_t_0k_2h = {}
+    delta_t_0k_2hp1 = {}
+    delta_t_0k_mean = {}
+    # Time differences k=1,2,3,4 for interfaces 2h and 2h+1
+    delta_t_k_h = {}
+    delta_t_k_h[0] = Decimal(ifd_times['t_2h+1'][0]) - Decimal(ifd_times['t_2h'][0])
+
+    # 1. Reconstruct instantaneous local velocity
+    D0 = []
+    D1 = []
+    D2 = []
+    D3 = []
+    for k in aux_sensor_ids:
+        # Time differences
+        delta_t_0k_2h[k] = Decimal(ifd_times['t_2h'][k]) \
+                         - Decimal(ifd_times['t_2h'][0])
+        delta_t_0k_2hp1[k] = Decimal(ifd_times['t_2h+1'][k]) \
+                           - Decimal(ifd_times['t_2h+1'][0])
+        delta_t_k_h[k] = Decimal(ifd_times['t_2h+1'][k]) \
+                       - Decimal(ifd_times['t_2h'][k])
+        # Mean time difference
+        delta_t_0k_mean[k] = (delta_t_0k_2h[k] + delta_t_0k_2hp1[k])/Decimal(2.0)
+        # Fill the matrices given in Eq. (17) in Tian et al. (2015)
+        D0.append(np.array([Decimal(S_0k[k][0]), Decimal(S_0k[k][1]), Decimal(S_0k[k][2])]))
+        D1.append(np.array([delta_t_0k_mean[k], Decimal(S_0k[k][1]), Decimal(S_0k[k][2])]))
+        D2.append(np.array([Decimal(S_0k[k][0]), delta_t_0k_mean[k], Decimal(S_0k[k][2])]))
+        D3.append(np.array([Decimal(S_0k[k][0]), Decimal(S_0k[k][1]), delta_t_0k_mean[k]]))
+
+    # Calculate matrix determinants
+    # Eq. (17) in Tian et al. (2015)
+    D0_det = calc_det(D0)
+    D1_det = calc_det(D1)
+    D2_det = calc_det(D2)
+    D3_det = calc_det(D3)
+
+    # Calculate instantaneous velocity magnitude and components
+    # Eq. (16) from Tian et al. (2015)
+    V =  np.sqrt((D0_det**2)/(D1_det**2 + D2_det**2 + D3_det**2))
+
+    # Eq. (15) from Tian et al. (2015)
+    V_bh_x = V * V * D1_det / D0_det
+    V_bh_y = V * V * D2_det / D0_det
+    V_bh_z = V * V * D3_det / D0_det
+
+    velocity = np.array([V_bh_x, V_bh_y, V_bh_z])
+    diameter = np.array([math.nan, math.nan])
+    if_norm_unit_vecs = [np.array([math.nan, math.nan, math.nan]),\
+                        np.array([math.nan, math.nan, math.nan])]
+    iac = math.nan
+
+    return velocity, diameter, if_norm_unit_vecs, iac
+
 
 def main():
     """
@@ -264,6 +791,7 @@ def main():
     args = parser.parse_args()
 
     # Eq. (43) in Shen et al. (2005): estimated gas velocity
+    global V_GAS
     V_GAS = Decimal(args.velocity)
 
     # Create Posix path for OS indepency
@@ -280,8 +808,7 @@ def main():
     # Create a H5-file reader
     reader = H5Reader(path / 'binary_signal.h5')
     # Read the time vector
-    t_signal_str = (reader.getDataSet('time')[:]).astype(str)
-    t_signal = reader.getDataSet('time')[:]
+    t_signal = (reader.getDataSet('time')[:]).astype(str)
     # Read the signal time series
     ds_signal = reader.getDataSet('signal')
     # Get the signal
@@ -293,465 +820,92 @@ def main():
     n_sensors = len(sensor_ids)
     # Check the reconstruction algorithm type
     ra_type = config['RECONSTRUCTION']['type']
-
+    bubbles_complete = []
     if (n_sensors == 2):
-        if (ra_type == "AWCC"):
+        if (ra_type == "dual_tip_AWCC"):
             # AWCC for 2 tips
             # number of particles per windows
-            n_particles = config['RECONSTRUCTION']['n_particles']
-            # the sampling frequency
-            f_sample = config['PROBE']['sampling_frequency']
-            sensors = config['PROBE']['sensors']
-            delta_x = abs(sensors[1]['relative_location'][0] - sensors[0]['relative_location'][0])
-            # the sampling duration
-            duration = t_signal[-1]-t_signal[0]
-            # get the chord lengths in terms of number of samples
-            # chord length [s] = chord length / f_sample
-            print('Determining the air and water chord.\n\n')
-            chord_w,chord_a,F1 = chord(signal[:,0],duration, progress=args.progress)
-            print('Determining the windows.\n\n')
-            n_windows,start,stop,t = windows(chord_a,chord_w,n_particles,f_sample, progress=args.progress)
-            
-            n_lags = np.empty(n_windows, dtype='int8')*-99999       # dummy multiplication to avoid access error
-            cinstloop = np.empty(n_windows)
-            finstloop = np.empty(n_windows)
-            uinstloop = np.empty(n_windows)
-            Rxymaxloop = np.empty(n_windows)
-            SPRloop = np.empty(n_windows)
-            uinstloop_nofilter = np.empty(n_windows)
-            Rxymaxloop_nofilter = np.empty(n_windows)
-            SPRloop_nofilter = np.empty(n_windows)
-            # loop over windows
-            print('Calculating the velocity for all windows.\n\n')
-            for ii in range(0,n_windows-1):
-                n_lags[ii] = int(stop[ii] - start[ii])              # lags correspond to time windows
-                S1 = signal[start[ii]:stop[ii],0]                   # raw signals leading tip
-                S2 = signal[start[ii]:stop[ii],1]                   # raw signals trailing tip
-                cinstloop[ii] = np.mean(S1)                         # void fraction inside a window
-                _,_,finstloop[ii] = chord(S1,(n_lags[ii]/f_sample)) # get F inside a window
-                uinstloop[ii],Rxymaxloop[ii],SPRloop[ii],uinstloop_nofilter[ii],Rxymaxloop_nofilter[ii],SPRloop_nofilter[ii] = velocity(n_lags[ii],delta_x,f_sample,S1,S2) # pseudo-instantaneous velocities
-                # Display progress
-                if args.progress:
-                    printProgressBar(ii, n_windows, prefix = 'Progress:', suffix = 'Complete', length = 50)
-
-            spr_ineq = np.linspace(0.0,1.0,1000)
-            rmax_ineq = 0.4*(np.square(spr_ineq) + 1.0)
-            fig, ax = plt.subplots(1,1,figsize=(4,2.88))
-            sc = plt.scatter(SPRloop_nofilter,Rxymaxloop_nofilter,c=uinstloop_nofilter,cmap='viridis')
-            plt.plot(spr_ineq,rmax_ineq,color='k')
-            ax.set_ylabel(r'$R_{\mathrm{12},i,\mathrm{max}}$ [-]')
-            ax.set_xlabel(r'SPR$_i$ [-]')
-            ax.set_xlim([0.0,1.0])
-            ax.set_ylim([0.0,1.0])
-            ax.grid()
-            cbar = plt.colorbar(sc)
-            cbar.set_label(r'$U_x$ [m/s]', rotation=90)
-            plt.subplots_adjust(left=0.16, bottom=0.15, right=0.88, top=0.98, wspace=0.2, hspace=0.3)
-            fig.savefig(path / 'SPR_R12max.svg',dpi=300)
-
-            np.savetxt(path / 'SPR.csv', SPRloop, delimiter=',')
-            np.savetxt(path / 'R12max.csv', Rxymaxloop, delimiter=',')
-            np.savetxt(path / 'U.csv', uinstloop, delimiter=',')
-
-            # store as bubble properties
-            bubbles_complete = []
-            for ii in range(0,len(uinstloop)):
-                ifd_times = pd.DataFrame(index=sensor_ids, columns=['t_2h','t_2h+1'])
-                ifd_times['t_2h'][0] = start[ii]/f_sample
-                ifd_times['t_2h+1'][0] = stop[ii]/f_sample
-                ifd_times['t_2h'][1] = start[ii]/f_sample
-                ifd_times['t_2h+1'][1] = stop[ii]/f_sample
-                bubble_props = {'ifd_times':ifd_times}
-                bubble_props['velocity'] = np.array([uinstloop[ii],0.0, 0.0])
-                bubble_props['diameter'] = np.array([0.0, 0.0])
-                bubble_props['if_norm_unit_vecs'] = [0.0, 0.0]
-                bubbles_complete.append(bubble_props)
-
-            iac = 0.0
+            bubbles_complete = run_sig_proc_awcc(path, args,
+                                                config,
+                                                sensor_ids,
+                                                t_signal,
+                                                signal)
+            # interfacial area concentration cannot be estimated with AWCC
+            IAC = math.nan
+            print(f"\nDetected {len(bubbles_complete)} averaging windows.")
         else:
             PRINTERRORANDEXIT(f'Reconstruction algorithm <{ra_type}> not valid for 2-tip probes.')
 
-    elif (n_sensors == 4):
+    elif (n_sensors >= 4):
         # Reconstruction algorithm for 4 tips
 
-        # Get sensors from config file
-        # Eq. (1) Shen and Nakamura (2014): distance vectors S_0k from the central
-        # front sensor tip (0) to any of the three peripheral rear sensor tips k
-        S_k = {}
-        S_0k = {}
-        S_0k_mag = {}
-        cos_eta_0k = {}
-        aux_sensor_ids = []
-        max_t_k = {}
-        sensors = config['PROBE']['sensors']
-        for sensor in sensors:
-            # Get the sensor ID
-            s_id = sensor['id']
-            # Get relative location vectors
-            S_k[s_id] = np.asarray(sensor['relative_location'],dtype='str')
-        for sensor in sensors:
-            # Get the sensor ID
-            s_id = sensor['id']
-            if s_id != 0:
-                aux_sensor_ids.append(s_id)
-                # Set the distance vectors
-                S_0k[s_id] = np.array([Decimal(S_k[s_id][0])-Decimal(S_k[0][0]),
-                                       Decimal(S_k[s_id][1])-Decimal(S_k[0][1]),
-                                       Decimal(S_k[s_id][2])-Decimal(S_k[0][2])],
-                                      dtype='str')
-                # Calculate magnitudes
-                S_0k_mag[s_id] = (Decimal(S_0k[s_id][0]) * Decimal(S_0k[s_id][0])
-                                + Decimal(S_0k[s_id][1]) * Decimal(S_0k[s_id][1])
-                                + Decimal(S_0k[s_id][2]) * Decimal(S_0k[s_id][2])).sqrt()
-                # Calculate cos of angles between vector S0k and (x,y,z)-axis
-                tmp = []
-                for ii in range(0,3):
-                    tmp.append(Decimal(S_0k[s_id][ii]) / S_0k_mag[s_id])
-                cos_eta_0k[s_id] = tmp
-                # Determine valid range for lag between signal of sensors 0
-                # and signal of sensor k from Eq. (43) in Shen et al. (2005)
-                max_t_k[s_id] = S_0k_mag[s_id] / (COEFF_0 * V_GAS)
+        # get the distance vector between leading and trailing tips
+        aux_sensor_ids, max_t_k,S_0k_mag,S_0k,cos_eta_0k = get_sensor_distance_vectors(config)
 
-        # Create interface-detection (IFD) signal by first order difference
-        signal_ifd = signal[1:len(signal)] - signal[0:(len(signal)-1)]
-        # Get average time for each difference
-        # Multiply and divide by the conjugate expression to avoid loss
-        # of significance
-        t_signal_ifd = t_signal[0:(len(t_signal)-1)] \
-                + (t_signal[1:len(t_signal)]-t_signal[0:(len(t_signal)-1)])/2.0
-        t_signal_ifd_list = []
-        for ii in range(0,len(t_signal_ifd)):
-            t_signal_ifd_list.append(str(Decimal(t_signal_str[ii]) \
-                + (Decimal(t_signal_str[ii+1])-Decimal(t_signal_str[ii]))/Decimal(2.0)))
+        # run event detection algorithm
+        bubbles = run_event_detection(args,
+                                    aux_sensor_ids,
+                                    max_t_k,
+                                    sensor_ids,
+                                    t_signal,
+                                    signal)
 
-        # Interface-pairing signal-processing scheme
-        # Shen et al. (2005)
-        # Get the column number of the main sensor 0, just in case the order gets
-        # messed up along the process
-        id0 = np.where(sensor_ids == 0)[0][0]
-        # Indices of the rising IFD signals for main sensor 0
-        signal_ifd_rise_0 = np.where(signal_ifd[:,id0] > 0.0)[0]
-        # Initialize lists to store complete and incomplete bubbles
-        bubbles_complete = []
-        bubbles_incomplete = []
-        print('\nChecking for complete bubbles....\n')
-        # Loop over rising signal fronts of main sensor 0 and do interface pairing
-        for ii,idx_rise_0 in enumerate(signal_ifd_rise_0):
-            # DataFrame with time of IFD of front (2h) and rear (2h+1) bubble
-            # interface for each sensor
-            ifd_times = pd.DataFrame(index=sensor_ids, columns=['t_2h','t_2h+1'])
-            # Main Sensor 0
-            # Write t_2h of sensor 0
-            ifd_times['t_2h'][0] = t_signal_ifd_list[idx_rise_0]
+        print('\nStarting signal processing...\n')
 
-            # Search for t_2h+1
-            # Indices of the falling IFD signals for main sensor 0
-            signal_ifd_fall_0 = np.where(signal_ifd[:,id0] < 0.0)[0]
-            # Index of the falling IFD signal for main sensor 0
-            idx_fall_0 = min(signal_ifd_fall_0[signal_ifd_fall_0 > idx_rise_0])
-            # Write t_b+1 of sensor 0
-            ifd_times['t_2h+1'][0] = t_signal_ifd_list[idx_fall_0]
-            # Auxillary sensors k
-            for k in aux_sensor_ids:
-                idk = np.where(sensor_ids == k)[0][0]
-                # Check if sensor is currently in air (1) or water (0) to determine
-                # the search direction in time (backward or forward)
-                phase = signal[idx_rise_0, idk]
-                if phase == 0:
-                    # Sensor k is currently in water phase -> search forward
-                    # Rising IFD signal
-                    # Indices of the rising IFD signals for aux. sensor k
-                    signal_ifd_rise_k = np.where(signal_ifd[:,idk] > 0.0)[0]
-                    # Ahead of rising IFD signal of sensor 0
-                    signal_ifd_rise_k = signal_ifd_rise_k[signal_ifd_rise_k > idx_rise_0]
-                    # Index of the rising IFD signal for aux. sensor k closest to
-                    # idx_rise_0
-                    if len(signal_ifd_rise_k) > 0:
-                        idx_rise_k = min(signal_ifd_rise_k)
+        # Initialize the Interfacial Area Concentration (IAC)
+        IAC = Decimal(0.0)
+
+        # Loop over bubbles
+        for ii,bubble_props in enumerate(bubbles):
+            # Check how many sensors recorded a valid signal
+            sensors_valid = bubble_props['aux_sensors_complete']
+            n_sensors_valid = len(sensors_valid)
+            # can only do reconstruction with 3 or more sensors
+            if (n_sensors_valid >= 3):
+                # get possible
+                sensor_combs = combinations(sensors_valid, 3)
+                # Initialize the variables to store the reconstructed properties
+                vel = np.ones((n_sensors_valid,3))*math.nan
+                diam = np.ones((n_sensors_valid,2))*math.nan
+                iac = np.ones(n_sensors_valid)*math.nan
+                for jj,sensor_comb in enumerate(list(sensor_combs)):
+                    if ra_type == "Shen_Nakamura_2014":
+                        # Reconstruction algorithm of Shen and Nakamura (2014)
+                        # https://doi.org/10.1016/j.ijmultiphaseflow.2013.11.010
+                        vel[jj,:],diam[jj,:],_,iac[jj] =\
+                                run_sig_proc_shen(args,
+                                                sensor_comb,
+                                                bubble_props,
+                                                S_0k_mag,
+                                                cos_eta_0k)
+                    elif ra_type == "Tian_et_al_2015":
+                        # Reconstruction algorithm of Tian et al. (2015)
+                        # https://doi.org/10.1016/j.pnucene.2014.08.005
+                        vel[jj,:],diam[jj,:],_,iac[jj] =\
+                                run_sig_proc_tian(args,
+                                                sensor_comb,
+                                                bubble_props,
+                                                S_0k_mag,
+                                                S_0k)
                     else:
-                        # no rising IFD signal before t_2h of main sensor, NaN
-                        idx_rise_k = np.nan
-
-                elif phase == 1:
-                    # Sensor k is currently in air phase -> search backward
-                    # Rising IFD signal
-                    # Indices of the rising IFD signals for aux. sensor k
-                    signal_ifd_rise_k = np.where(signal_ifd[:,idk] > 0.0)[0]
-                    # Behind of rising IFD signal of sensor 0
-                    signal_ifd_rise_k = signal_ifd_rise_k[signal_ifd_rise_k <= idx_rise_0]
-
-                    # Index of the rising IFD signal for aux. sensor k closest to
-                    # idx_rise_0
-                    if len(signal_ifd_rise_k) > 0:
-                        idx_rise_k = max(signal_ifd_rise_k)
-                    else:
-                        # no rising IFD signal before t_2h of main sensor, NaN
-                        idx_rise_k = np.nan
-                # Search for t_2h+1 of sensor k
-                if not np.isnan(idx_rise_k):
-                    # Indices of the falling IFD signals for main sensor k
-                    signal_ifd_fall_k = np.where(signal_ifd[:,idk] < 0.0)[0]
-                    signal_ifd_fall_k = signal_ifd_fall_k[signal_ifd_fall_k > idx_rise_k]
-                    # Index of the falling IFD signal for main sensor k
-                    idx_fall_k = min(signal_ifd_fall_k)
-                else:
-                    idx_fall_k = np.nan
-
-                # Store the time of IFD of front (2h) and rear (2h+1) bubble
-                # interface for each sensor
-                # Write t_2h of sensor k
-                if not np.isnan(idx_rise_k):
-                    ifd_times['t_2h'][k] = t_signal_ifd_list[idx_rise_k]
-                else:
-                    ifd_times['t_2h'][k] = np.nan
-                # Write t_2h+1 of sensor k
-                if not np.isnan(idx_fall_k):
-                    ifd_times['t_2h+1'][k] = t_signal_ifd_list[idx_fall_k]
-                else:
-                    ifd_times['t_2h+1'][k] = np.nan
-
-            # Check for each sensor if IFD times of front (2h) and rear (2h+1)
-            # bubble fall within the range for the lag between signal of sensors 0
-            # and signal of sensor k from Eq. (42) in Shen et al. (2005)
-            for k in aux_sensor_ids:
-                # first interface (2h)
-                lag_2h = abs(Decimal(ifd_times['t_2h'][0]) - Decimal(ifd_times['t_2h'][k]))
-                if lag_2h.compare(max_t_k[k]) == 1:
-                    # lag too large
-                    ifd_times['t_2h'][k] = np.nan
-                # second interface (2h+1)
-                lag_2hp1 = abs(Decimal(ifd_times['t_2h+1'][0]) - Decimal(ifd_times['t_2h+1'][k]))
-                if lag_2hp1.compare(max_t_k[k]) == 1:
-                    ifd_times['t_2h+1'][k] = np.nan
-
-            # Store the interface detection times for complete and
-            # incomplete bubbles
-            bubble_props = {'ifd_times':ifd_times}
-
-            if ifd_times.isnull().values.any():
-                bubbles_incomplete.append(bubble_props)
-            else:
+                        PRINTERRORANDEXIT(f'Reconstruction algorithm '+\
+                            '<{ra_type}> not valid for 4-tip probes.')
+                # Store the computed bubble properties
+                bubble_props['velocity'] = np.nanmean(vel, axis=0)
+                bubble_props['diameter'] = np.nanmean(diam, axis=0)
+                # bubble_props['if_norm_unit_vecs'] =\
+                #                            np.nanmean(if_norm_unit_vec, axis=0)
+                IAC = IAC + Decimal(np.nanmean(iac))
+                # append to complete bubbles
                 bubbles_complete.append(bubble_props)
             # Display progress
             if args.progress:
-                printProgressBar(ii, len(signal_ifd_rise_0), prefix = 'Progress:', suffix = 'Complete', length = 50)
-
+                printProgressBar(ii, len(bubbles), prefix = 'Progress:', \
+                    suffix = 'Complete', length = 50)
+        IAC = IAC * 2 / (Decimal(t_signal[-1])-Decimal(t_signal[0]))
+        # end (n_sensors >= 4)
+        print(f"\nDetected {len(bubbles)} bubble signals.")
         print(f"\nDetected {len(bubbles_complete)} complete bubble signals.")
-        print(f"Detected {len(bubbles_incomplete)} incomplete bubble signals.\n")
-        print('\nRunning reconstruction algorithm....\n')
-        # Initialize the Interfacial Area Concentration (IAC)
-        iac = Decimal(0.0)
-
-        # Reconstruction algorithm of Shen and Nakamura (2014)
-        # https://doi.org/10.1016/j.ijmultiphaseflow.2013.11.010
-        if ra_type == "Shen_Nakamura_2014":
-            # Loop over complete bubbles
-            for ii,bubble_props in enumerate(bubbles_complete):
-                ifd_times = bubble_props['ifd_times']
-
-                # Time differences between sensors 0 and k for interfaces 2h and 2h+1
-                delta_t_0k_2h = {}
-                delta_t_0k_2hp1 = {}
-                # Time differences k=1,2,3,4 for interfaces 2h and 2h+1
-                delta_t_k_h = {}
-                delta_t_k_h[0] = Decimal(ifd_times['t_2h+1'][0]) - Decimal(ifd_times['t_2h'][0])
-
-                # 1. Reconstruct instantaneous local velocity
-                # Inverse of measurable displacement velocity of the h-th bubble
-                # for sensor 0 and k
-                V_m0k_h_inv = {}
-                E_0k_2h = {}
-                E_0k_2hp1 = {}
-                A_0 = []
-                A_01_h = []
-                A_02_h = []
-                A_03_h = []
-                B_01_2h = []
-                B_02_2h = []
-                B_03_2h = []
-                B_01_2hp1 = []
-                B_02_2hp1 = []
-                B_03_2hp1 = []
-
-                for k in aux_sensor_ids:
-                    # Time differences
-                    # Eq. (2) from Shen and Nakamura (2014)
-                    delta_t_0k_2h[k] = Decimal(ifd_times['t_2h'][k]) \
-                                     - Decimal(ifd_times['t_2h'][0])
-                    delta_t_0k_2hp1[k] = Decimal(ifd_times['t_2h+1'][k]) \
-                                       - Decimal(ifd_times['t_2h+1'][0])
-                    # Eq. (3) from Shen and Nakamura (2014)
-                    delta_t_k_h[k] = Decimal(ifd_times['t_2h+1'][k]) \
-                                   - Decimal(ifd_times['t_2h'][k])
-                    # Measurable displacement velocity
-                    # Eq. (30) from Shen and Nakamura (2014)
-                    V_m0k_h_inv[k] = (delta_t_0k_2h[k] + delta_t_0k_2hp1[k]) \
-                                / (Decimal(2.0) * Decimal(S_0k_mag[k]))
-                    A_0.append(cos_eta_0k[k])
-                    A_01_h.append(np.array([V_m0k_h_inv[k], cos_eta_0k[k][1], cos_eta_0k[k][2]]))
-                    A_02_h.append(np.array([cos_eta_0k[k][0], V_m0k_h_inv[k], cos_eta_0k[k][2]]))
-                    A_03_h.append(np.array([cos_eta_0k[k][0], cos_eta_0k[k][1], V_m0k_h_inv[k]]))
-
-                # Calculate matrix determinants
-                # Eq. (32) to (35) from Shen and Nakamura (2014)
-                A_0_det = calc_det(A_0)
-                A_01_h_det = calc_det(A_01_h)
-                A_02_h_det = calc_det(A_02_h)
-                A_03_h_det = calc_det(A_03_h)
-                # Calculate instantaneous velocity magnitude and components
-                dummy = (A_01_h_det* A_01_h_det + A_02_h_det*A_02_h_det + A_03_h_det*A_03_h_det).sqrt()
-                # Eq. (37) from Shen and Nakamura (2014)
-                V_bh_mag =  abs(A_0_det) * inverse_den(dummy)
-                # Eq. (36) from Shen and Nakamura (2014)
-                V_bh_x = V_bh_mag**2 * A_01_h_det * inverse_den(A_0_det)
-                V_bh_y = V_bh_mag**2 * A_02_h_det * inverse_den(A_0_det)
-                V_bh_z = V_bh_mag**2 * A_03_h_det * inverse_den(A_0_det)
-                bubble_props['velocity'] = np.array([V_bh_x, V_bh_y, V_bh_z])
-
-                # 2. Reconstruct bubble diameter and interfacial normal unit vector
-                # measurement
-                E_0k_2h = {}
-                E_0k_2hp1 = {}
-                B_01_2h = []
-                B_02_2h = []
-                B_03_2h = []
-                B_01_2hp1 = []
-                B_02_2hp1 = []
-                B_03_2hp1 = []
-                for k in aux_sensor_ids:
-                    # Chord lengths of interfaces 2h and 2h+1
-                    # Eq. (43) and (44) in Shen and Nakamura (2014)
-                    E_0k_2h[k] = V_bh_mag*V_bh_mag * delta_t_0k_2h[k] \
-                                * (delta_t_0k_2hp1[k] + delta_t_k_h[0]) / S_0k_mag[k] \
-                                - S_0k_mag[k]
-                    E_0k_2hp1[k] = V_bh_mag*V_bh_mag * delta_t_0k_2hp1[k] \
-                                * (delta_t_0k_2h[k] - delta_t_k_h[0]) / S_0k_mag[k] \
-                                - S_0k_mag[k]
-                    # Eq. (46) and (48) in Shen and Nakamura (2014)
-                    B_01_2h.append(np.array([E_0k_2h[k], cos_eta_0k[k][1], cos_eta_0k[k][2]]))
-                    B_02_2h.append(np.array([cos_eta_0k[k][0], E_0k_2h[k], cos_eta_0k[k][2]]))
-                    B_03_2h.append(np.array([cos_eta_0k[k][0], cos_eta_0k[k][1], E_0k_2h[k]]))
-                    B_01_2hp1.append(np.array([E_0k_2hp1[k], cos_eta_0k[k][1], cos_eta_0k[k][2]]))
-                    B_02_2hp1.append(np.array([cos_eta_0k[k][0], E_0k_2hp1[k], cos_eta_0k[k][2]]))
-                    B_03_2hp1.append(np.array([cos_eta_0k[k][0], cos_eta_0k[k][1], E_0k_2hp1[k]]))
-                # Calculate matrix determinants
-                # Eq. (46) and (48) in Shen and Nakamura (2014)
-                B_01_2h_det = calc_det(B_01_2h)
-                B_02_2h_det = calc_det(B_02_2h)
-                B_03_2h_det = calc_det(B_03_2h)
-                B_01_2hp1_det = calc_det(B_01_2hp1)
-                B_02_2hp1_det = calc_det(B_02_2hp1)
-                B_03_2hp1_det = calc_det(B_03_2hp1)
-
-                # Calculate the bubble diameter
-                dummy_2h = (B_01_2h_det*B_01_2h_det \
-                            + B_02_2h_det*B_02_2h_det \
-                            + B_03_2h_det*B_03_2h_det).sqrt()
-                dummy_2hp1 = (B_01_2hp1_det*B_01_2hp1_det \
-                            + B_02_2hp1_det*B_02_2hp1_det \
-                            + B_03_2hp1_det*B_03_2hp1_det).sqrt()
-                # Eq. (50) from Shen and Nakamura (2014)
-                D_h_2h = dummy_2h / A_0_det
-                D_h_2hp1 = dummy_2hp1 / A_0_det
-                bubble_props['diameter'] = np.array([D_h_2h, D_h_2hp1])
-
-                # Calculate interfacial normal unit vectors
-                # Eq. (51) in Shen and Nakamura (2014)
-                cos_eta_i_2h = np.array([Decimal(1.0), Decimal(1.0), Decimal(1.0)]) * A_0_det \
-                                 * inverse_den(abs(A_0_det)) \
-                                 * inverse_den(dummy_2h)
-                cos_eta_i_2h = cos_eta_i_2h \
-                            * np.array([B_01_2h_det, B_02_2h_det, B_03_2h_det])
-                cos_eta_i_2hp1 = np.array([Decimal(1.0), Decimal(1.0), Decimal(1.0)]) * A_0_det \
-                                * inverse_den(abs(A_0_det)) \
-                                * inverse_den(dummy_2hp1)
-                cos_eta_i_2hp1 = cos_eta_i_2hp1 \
-                            * np.array([B_01_2hp1_det, B_02_2hp1_det, B_03_2hp1_det])
-                bubble_props['if_norm_unit_vecs'] = [cos_eta_i_2h, cos_eta_i_2hp1]
-
-                # Calculate the local Interfacial Area Concentration (IAC)
-                # Eq. (54) in Shen and Nakamura (2014)
-                # Sampling duration Omega
-                Omega = Decimal(t_signal[-1]) - Decimal(t_signal[0])
-                dummy_A = A_01_h_det*A_01_h_det + A_02_h_det*A_02_h_det + A_03_h_det*A_03_h_det
-                dummy_B = (B_01_2h_det*B_01_2h_det \
-                            + B_02_2h_det*B_02_2h_det \
-                            + B_03_2h_det*B_03_2h_det).sqrt()
-                dummy_AB = abs(A_0_det * (A_01_h_det*B_01_2h_det \
-                                        + A_02_h_det*B_02_2h_det \
-                                        + A_03_h_det*B_03_2h_det))
-                iac_h = dummy_A * dummy_B * inverse_den(dummy_AB)
-                iac += Decimal(2.0) / Omega * iac_h
-
-        # Reconstruction algorithm of Tian et al. (2015)
-        # https://doi.org/10.1016/j.pnucene.2014.08.005
-        elif ra_type == "Tian_et_al_2015":
-            # Loop over complete bubbles
-            for ii,bubble_props in enumerate(bubbles_complete):
-                ifd_times = bubble_props['ifd_times']
-
-                # Time differences between sensors 0 and k for interfaces 2h (front
-                # hemisphere) and 2h+1 (back hemisphere)
-                delta_t_0k_2h = {}
-                delta_t_0k_2hp1 = {}
-                delta_t_0k_mean = {}
-                # Time differences k=1,2,3,4 for interfaces 2h and 2h+1
-                delta_t_k_h = {}
-                delta_t_k_h[0] = Decimal(ifd_times['t_2h+1'][0]) - Decimal(ifd_times['t_2h'][0])
-
-                # 1. Reconstruct instantaneous local velocity
-                D0 = []
-                D1 = []
-                D2 = []
-                D3 = []
-                for k in aux_sensor_ids:
-                    # Time differences
-                    delta_t_0k_2h[k] = Decimal(ifd_times['t_2h'][k]) \
-                                     - Decimal(ifd_times['t_2h'][0])
-                    delta_t_0k_2hp1[k] = Decimal(ifd_times['t_2h+1'][k]) \
-                                       - Decimal(ifd_times['t_2h+1'][0])
-                    delta_t_k_h[k] = Decimal(ifd_times['t_2h+1'][k]) \
-                                   - Decimal(ifd_times['t_2h'][k])
-                    # Mean time difference
-                    delta_t_0k_mean[k] = (delta_t_0k_2h[k] + delta_t_0k_2hp1[k])/Decimal(2.0)
-                    # Fill the matrices given in Eq. (17) in Tian et al. (2015)
-                    D0.append(np.array([Decimal(S_0k[k][0]), Decimal(S_0k[k][1]), Decimal(S_0k[k][2])]))
-                    D1.append(np.array([delta_t_0k_mean[k], Decimal(S_0k[k][1]), Decimal(S_0k[k][2])]))
-                    D2.append(np.array([Decimal(S_0k[k][0]), delta_t_0k_mean[k], Decimal(S_0k[k][2])]))
-                    D3.append(np.array([Decimal(S_0k[k][0]), Decimal(S_0k[k][1]), delta_t_0k_mean[k]]))
-
-                # Calculate matrix determinants
-                # Eq. (17) in Tian et al. (2015)
-                D0_det = calc_det(D0)
-                D1_det = calc_det(D1)
-                D2_det = calc_det(D2)
-                D3_det = calc_det(D3)
-
-                # Calculate instantaneous velocity magnitude and components
-                # Eq. (16) from Tian et al. (2015)
-                V =  np.sqrt((D0_det**2)/(D1_det**2 + D2_det**2 + D3_det**2))
-
-                # Eq. (15) from Tian et al. (2015)
-                V_bh_x = V * V * D1_det / D0_det
-                V_bh_y = V * V * D2_det / D0_det
-                V_bh_z = V * V * D3_det / D0_det
-
-                D_h_2h = math.nan
-                D_h_2hp1 = math.nan
-                cos_eta_i_2h = math.nan
-                cos_eta_i_2hp1 = math.nan
-                iac = math.nan
-
-                # Store the computed bubble properties
-                bubble_props['velocity'] = np.array([V_bh_x, V_bh_y, V_bh_z])
-                bubble_props['diameter'] = np.array([D_h_2h, D_h_2hp1])
-                bubble_props['if_norm_unit_vecs'] = [cos_eta_i_2h, cos_eta_i_2hp1]
-        else:
-            PRINTERRORANDEXIT(f'Reconstruction algorithm <{ra_type}> not valid for 4-tip probes.')
-
-            # Display progress
-            if args.progress:
-                printProgressBar(ii, len(bubbles_complete), prefix = 'Progress:', suffix = 'Complete', length = 50)
 
     print('\nSaving results....\n')
     # Generate a reconstructed velocity time-series from individual
@@ -829,7 +983,7 @@ def main():
     # Add the attributes
     ds_d.attrs['labels'] = ['D_h_2h', 'D_h_2hp1']
     # Create the IAC and void_fraction datasets
-    writer.writeDataSet('IAC', np.array([iac],dtype='float64'), 'float64')
+    writer.writeDataSet('IAC', np.array([IAC],dtype='float64'), 'float64')
     writer.writeDataSet('voidFraction', np.array([np.mean(signal[:,0])]), 'float64')
     writer.close()
     time2 = time.time()

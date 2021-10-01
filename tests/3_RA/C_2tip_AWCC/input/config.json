@@ -34,7 +34,7 @@
         ]
     },
     "RECONSTRUCTION": {
-        "type": "AWCC",
+        "type": "dual_tip_AWCC",
         "n_particles": 8
     },
     "REPRODUCIBLE": "yes"
