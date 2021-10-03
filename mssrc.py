@@ -541,6 +541,60 @@ def run_event_detection(args, aux_sensor_ids, max_t_k, sensor_ids, t_signal, sig
 
     return bubbles
 
+
+def run_sig_proc_dual_ED(args, bubble_props, sensors, cos_eta_0k):
+    """
+        This is signal processing algorithm for dual-tip probes based on
+        Kramer et el. (2020).
+
+        Kramer, M., Hohermuth, B., Valero, D., & Felder, S. (2020). Leveraging 
+        event detection techniques and cross-correlation analysis for phase-
+        detection probe measurements in turbulent air-water flows.
+        https://doi.org/10.14264/uql.2020.591
+
+        args:           the arguments from the CL-parser
+        bubble_props:   bubble properties
+        sensors:        the sensor locations
+                        and leading tips
+        cos_eta_0k:     unit distance vectors
+    """
+
+    if (len(bubble_props['aux_sensors_complete']) == 1):
+        # get the interface detection times
+        ifd_times = bubble_props['ifd_times']
+
+        # calculate central times of the dispersed phase particles
+        # leading sensor (0)
+        t_p_0 = (Decimal(ifd_times['t_2h+1'][0]) + Decimal(ifd_times['t_2h'][0])) \
+                    / Decimal(2.0)
+        # trailing sensor (1)
+        t_p_1 = (Decimal(ifd_times['t_2h+1'][1]) + Decimal(ifd_times['t_2h'][1])) \
+                    / Decimal(2.0)
+
+        # calcualte the travel time between the leading and trailing sensor
+        delta_t_p = t_p_1 - t_p_0
+        delta_x = Decimal(abs(sensors[1]['relative_location'][0] - \
+                    sensors[0]['relative_location'][0]))
+
+        # calculate the instantaneous velocity magnitude
+        u_inst_mag = delta_x / delta_t_p
+
+        # calculate the instantaneous velocity vector
+        u_inst = np.array([u_inst_mag, 0.0, 0.0])
+
+        # set the particle properties
+        bubble_props['velocity'] = u_inst
+        bubble_props['diameter'] = np.array([0.0, 0.0])
+        bubble_props['if_norm_unit_vecs'] = [np.array([0.0, 0.0, 0.0]), \
+                                             np.array([0.0, 0.0, 0.0])]
+    else:
+        # not enough data, set the particle properties to NaN
+        bubble_props['velocity'] =  np.array([np.nan, np.nan, np.nan])
+        bubble_props['diameter'] = np.array([np.nan, np.nan])
+        bubble_props['if_norm_unit_vecs'] = [np.array([np.nan, np.nan, np.nan]), \
+                                             np.array([np.nan, np.nan, np.nan])]
+
+
 def run_sig_proc_shen(args, aux_sensor_ids, bubble_props, S_0k_mag, cos_eta_0k):
     """
         This is signal processing algorithm of Shen & Nakamura (2014).
@@ -833,11 +887,33 @@ def main():
             # interfacial area concentration cannot be estimated with AWCC
             IAC = math.nan
             print(f"\nDetected {len(bubbles_complete)} averaging windows.")
+        elif (ra_type == "dual_tip_ED"):
+            # Event-detection (ED) for 2 tips
+            # get the distance vector between leading and trailing tips
+            aux_sensor_ids, max_t_k,S_0k_mag,S_0k,cos_eta_0k = get_sensor_distance_vectors(config)
+            sensors = config['PROBE']['sensors']
+            # run event detection algorithm
+            bubbles = run_event_detection(args,
+                                    aux_sensor_ids,
+                                    max_t_k,
+                                    sensor_ids,
+                                    t_signal,
+                                    signal)
+            # Loop over bubbles
+            for ii,bubble_props in enumerate(bubbles):
+                run_sig_proc_dual_ED(args,
+                                    bubble_props,
+                                    sensors,
+                                    cos_eta_0k)
+                # append to complete bubbles
+                bubbles_complete.append(bubble_props)
+            # interfacial area concentration cannot be estimated with AWCC
+            IAC = math.nan
         else:
             PRINTERRORANDEXIT(f'Reconstruction algorithm <{ra_type}> not valid for 2-tip probes.')
 
     elif (n_sensors >= 4):
-        # Reconstruction algorithm for 4 tips
+        # Reconstruction algorithm for 4 or more sensors
 
         # get the distance vector between leading and trailing tips
         aux_sensor_ids, max_t_k,S_0k_mag,S_0k,cos_eta_0k = get_sensor_distance_vectors(config)
