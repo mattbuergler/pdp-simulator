@@ -996,8 +996,8 @@ def main():
                                            bubble_props['velocity'][1], \
                                            bubble_props['velocity'][2]
                                           ])
-        time_reconst[ii,0] = np.min(bubble_props['ifd_times'].to_numpy().astype('float64'))
-        time_reconst[ii,1] = np.max(bubble_props['ifd_times'].to_numpy().astype('float64'))
+        time_reconst[ii,0] = np.nanmin(bubble_props['ifd_times'].to_numpy().astype('float64'))
+        time_reconst[ii,1] = np.nanmax(bubble_props['ifd_times'].to_numpy().astype('float64'))
         bubble_diam_reconst[ii,:] = bubble_props['diameter']
 
     # data filtering
