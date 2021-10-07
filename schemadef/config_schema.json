@@ -240,7 +240,7 @@
         "type": {
           "type": "string",
           "description": "The reconstruction algorithm: Shen and Nakamura (2014), or Tian et al. (2015); or AWCC (Kramer et al., 2020).",
-          "enum": ["Shen_Nakamura_2014", "Tian_et_al_2015", "AWCC"]
+          "enum": ["Shen_Nakamura_2014", "Tian_et_al_2015", "dual_tip_AWCC","dual_tip_ED"]
         }
       }
     },
