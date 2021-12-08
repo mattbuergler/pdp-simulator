@@ -545,7 +545,7 @@ def SBG_signal(
     # Time vector
     t_probe = np.linspace(0, duration, n_probe);
     # Initialize signals to zero
-    signal = np.zeros((n_probe, n_sensors)).astype('int')
+    signal = np.zeros((n_probe, n_sensors)).astype('uint8')
     # Loop over all bubbles
     print('\nSampling the sensor signal')
     for kk in range(0,nb):
@@ -602,7 +602,7 @@ def SBG_signal(
     writer = H5Writer(path / 'binary_signal.h5', 'w')
     # Write the time vector
     writer.writeDataSet('time', t_probe, 'float64')
-    writer.writeDataSet('signal', signal, 'u4')
+    writer.writeDataSet('signal', signal, 'u1')
     ds_sig = writer.getDataSet('signal')
     ds_sig.attrs['sensor_id'] = list(sensor_delta.keys())
     writer.close()
