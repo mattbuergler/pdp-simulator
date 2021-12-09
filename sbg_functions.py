@@ -437,6 +437,7 @@ def SBG_get_Signal_traj(
     t_traj,
     X,
     t_probe):
+
     t_probe_unique = np.unique(np.hstack((t_traj, t_probe[t_probe<=max(t_traj)])))
     t_traj_del = t_traj[np.invert(np.isin(t_traj, t_probe))]
     Xinterp = pd.DataFrame(X, index=t_traj, columns=['x','y','z'])
@@ -449,7 +450,9 @@ def SBG_signal(
     flow_properties,
     probe,
     reproducible,
+    uncertainty,
     progress):
+
     """Generate the bubble field, place probe and collect signal.
 
         Parameters
@@ -506,10 +509,6 @@ def SBG_signal(
     writer.writeDataSet('bubbles/arrival_time', AT, 'float64')
     writer.writeDataSet('bubbles/size', b_size, 'float64')
     writer.close()
-    # Initialize bubble center location to zero
-    cx = np.zeros(nb)
-    cy = np.zeros(nb)
-    cz = np.zeros(nb);
 
     # Gather the probe information (id and relative location [=delta])
     n_sensors = len(probe['sensors'])
@@ -537,6 +536,24 @@ def SBG_signal(
     n_probe = round(duration / dt_probe) + 1;
     # Time vector
     t_probe = np.linspace(0, duration, n_probe);
+    # Initialize the probe location
+    c_probe = np.zeros((n_probe,3))
+    if 'VIBRATION' in uncertainty:
+        # amplitudes of vibrations in all directions
+        vib_amps = uncertainty['VIBRATION']['amplitudes']
+        # frequencies of vibrations in all directions
+        vib_freqs = uncertainty['VIBRATION']['frequencies']
+        # probe location as function of time: f(t) = A*sin(2*Pi*f*t)
+        for ii in range(0,3):
+            c_probe[:,ii] = c_probe[:,ii] + vib_amps[ii] * np.sin(2.0 * math.pi * vib_freqs[ii] * t_probe)
+
+    # Write probe location over time
+    writer = H5Writer(path / 'flow_data.h5', 'a')
+    # Create the velocity data set for the entire time series of length n
+    writer.writeDataSet('probe/time', t_probe, 'float64')
+    writer.writeDataSet('probe/location', c_probe, 'float64')
+    writer.close()
+
     # Initialize signals to zero
     signal = np.zeros((n_probe, n_sensors)).astype('uint8')
     # Loop over all bubbles
@@ -544,14 +561,6 @@ def SBG_signal(
     for kk in range(0,nb):
         # Interpolate the location of the bubble at t = AT
         X_b_AT = SBG_interp_trajectory(t_traj, X, AT[kk])
-        # Set x-coordinate of probe to x-coordinate ob bubble center at AT
-        cx[kk] = X_b_AT[0]
-        # Set y-coordinate of probe to y-coordinate ob bubble center + random
-        # shift with ~Uniform[-B/2,B/2]
-        cy[kk] = X_b_AT[1] + random.uniform(-b_size[kk,1]/2.0,b_size[kk,1]/2.0)
-        # Set z-coordinate of probe to z-coordinate ob bubble center + random
-        # shift with ~Uniform[-B/2,B/2]
-        cz[kk] = X_b_AT[2] + random.uniform(-b_size[kk,2]/2.0,b_size[kk,2]/2.0)
         # Estimate timeframe for tracking the movement of bubble kk
         critical_time_pre = 3.0*np.linalg.norm(b_size[kk,:])/np.linalg.norm(um)
         critical_time_post = 3.0*(np.linalg.norm(b_size[kk,:]) + \
@@ -571,6 +580,16 @@ def SBG_signal(
             # Resample the trajectory to the sampling times of the probe
             t_resampled, X_resampled = SBG_get_Signal_traj(t_traj_kk, \
                                 X_traj_kk, t_probe_kk)
+            # Get probe locations that lie within the estimated timeframe
+            c_probe_kk = c_probe[(t_probe >= t_min) & (t_probe <= t_max),:]
+            # Set x-coordinate of probe to x-coordinate ob bubble center at AT
+            c_probe_kk[:,0] = X_b_AT[0]
+            # Set y-coordinate of probe to y-coordinate ob bubble center + random
+            # shift with ~Uniform[-B/2,B/2]
+            c_probe_kk[:,1] = c_probe_kk[:,1] + X_b_AT[1] + random.uniform(-b_size[kk,1]/2.0,b_size[kk,1]/2.0)
+            # Set z-coordinate of probe to z-coordinate ob bubble center + random
+            # shift with ~Uniform[-B/2,B/2]
+            c_probe_kk[:,2] = c_probe_kk[:,2] + X_b_AT[2] + random.uniform(-b_size[kk,2]/2.0,b_size[kk,2]/2.0)
             # Loop over all time steps within the timeframe
             abc = b_size[kk,:] / 2.0
             # Determine the row in the signal time series where to write the signal
@@ -581,9 +600,9 @@ def SBG_signal(
                 # Standard euqation: (x/a)2 + (y/b)2 + (z/c)2 = 1
                 # with x = (cx+delta - x_bubble)
                 radius = \
-                        (((cx[kk]+delta[0])-X_resampled[:,0])/abc[0])**2 \
-                      + (((cy[kk]+delta[1])-X_resampled[:,1])/abc[1])**2 \
-                      + (((cz[kk]+delta[2])-X_resampled[:,2])/abc[2])**2
+                        (((c_probe_kk[:,0]+delta[0])-X_resampled[:,0])/abc[0])**2 \
+                      + (((c_probe_kk[:,1]+delta[1])-X_resampled[:,1])/abc[1])**2 \
+                      + (((c_probe_kk[:,2]+delta[2])-X_resampled[:,2])/abc[2])**2
                 # Check for which time steps the bubble is pierced
                 idxs = np.where(radius <= 1) + row
                 # pierced, set signal to 1

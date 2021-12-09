@@ -82,12 +82,15 @@ def main():
             progress=args.progress
         )
     if command in ["signal", 'all']:
+        if 'UNCERTAINTY_QUANTIFICATION' not in config:
+            config['UNCERTAINTY_QUANTIFICATION'] = {}
         # Generate the probe signal
         sbg_functions.SBG_signal(
             path=path,
             flow_properties=config['FLOW_PROPERTIES'],
             probe=config['PROBE'],
             reproducible=config['REPRODUCIBLE'],
+            uncertainty=config["UNCERTAINTY_QUANTIFICATION"],
             progress=args.progress
             )
 
