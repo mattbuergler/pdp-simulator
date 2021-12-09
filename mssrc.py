@@ -411,10 +411,8 @@ def run_event_detection(args, aux_sensor_ids, max_t_k, sensor_ids, t_signal, sig
     print('\nStarting event-detection algorithm....\n')
     # Create interface-detection (IFD) signal by first order difference
     signal_ifd = signal[1:len(signal)] - signal[0:(len(signal)-1)]
-    # Get average time for each difference
-    # Multiply and divide by the conjugate expression to avoid loss
-    # of significance
 
+    # Get average time for each difference
     t_signal_ifd_list = []
     for ii in range(0,len(t_signal)-1):
         t_signal_ifd_list.append(str(Decimal(t_signal[ii]) \
@@ -1060,7 +1058,7 @@ def main():
     ds_d.attrs['labels'] = ['D_h_2h', 'D_h_2hp1']
     # Create the IAC and void_fraction datasets
     writer.writeDataSet('IAC', np.array([IAC],dtype='float64'), 'float64')
-    writer.writeDataSet('voidFraction', np.array([np.mean(signal[:,0])]), 'float64')
+    writer.writeDataSet('voidFraction', np.array([np.average(signal[:-1,0],weights=np.diff(t_signal.astype('float64')))]), 'float64')
     writer.close()
     time2 = time.time()
     print(f'Successfully run the reconstruction algorithm')

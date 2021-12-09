@@ -262,23 +262,15 @@ def SBG_fluid_velocity(path, flow_properties, reproducible, progress):
         u_f = np.empty((n_chunk,3)) * np.NaN
         x_f = np.empty((n_chunk,3)) * np.NaN
         # First velocity vector depends on old chunk
-        u_f[0,0] = SBG_dt_corr(u_f_old[0,0], um[0], sigma[0], T[0], dt, R[0,0]);
-        u_f[0,1] = SBG_dt_corr(u_f_old[0,1], um[1], sigma[1], T[1], dt, R[0,1]);
-        u_f[0,2] = SBG_dt_corr(u_f_old[0,2], um[2], sigma[2], T[2], dt, R[0,2]);
+        u_f[0,:] = SBG_dt_corr(u_f_old[0,:], um, sigma, T, dt, R[0,:])
         # First trajectory vector depends on old chunk
-        x_f[0,0] = x_f_old[0,0] + (u_f[0,0]+u_f_old[0,0])/2.0*dt;
-        x_f[0,1] = x_f_old[0,1] + (u_f[0,1]+u_f_old[0,1])/2.0*dt;
-        x_f[0,2] = x_f_old[0,2] + (u_f[0,2]+u_f_old[0,2])/2.0*dt;
+        x_f[0,:] = x_f_old[0,:] + (u_f[0,:]+u_f_old[0,:])/2.0*dt
         # Calculate rest of the chunk
         for ii in range(1,n_chunk):
             # Calculate velocity
-            u_f[ii,0] = SBG_dt_corr(u_f[ii-1,0], um[0], sigma[0], T[0], dt, R[ii,0]);
-            u_f[ii,1] = SBG_dt_corr(u_f[ii-1,1], um[1], sigma[1], T[1], dt, R[ii,1]);
-            u_f[ii,2] = SBG_dt_corr(u_f[ii-1,2], um[2], sigma[2], T[2], dt, R[ii,2]);
+            u_f[ii,:] = SBG_dt_corr(u_f[ii-1,:], um, sigma, T, dt, R[ii,:])
             # Calculate trajectory
-            x_f[ii,0] = x_f[ii-1,0] + (u_f[ii,0]+u_f[ii-1,0])/2.0*dt;
-            x_f[ii,1] = x_f[ii-1,1] + (u_f[ii,1]+u_f[ii-1,1])/2.0*dt;
-            x_f[ii,2] = x_f[ii-1,2] + (u_f[ii,2]+u_f[ii-1,2])/2.0*dt;
+            x_f[ii,:] = x_f[ii-1,:] + (u_f[ii,:]+u_f[ii-1,:])/2.0*dt;
         # Write chunk to .h5 file
         writer.write2DataSet('fluid/velocity', u_f, row=kk, col=0)
         writer.write2DataSet('fluid/trajectory', x_f, row=kk, col=0)
@@ -290,6 +282,7 @@ def SBG_fluid_velocity(path, flow_properties, reproducible, progress):
         # Display progress
         if progress:
             printProgressBar(kk, n, prefix = 'Progress:', suffix = 'Complete', length = 50)
+
     writer.close()
     # Calculate statistics
     # Create a H5-file reader
@@ -598,6 +591,28 @@ def SBG_signal(
             # Display progress
             if progress:
                 printProgressBar(kk + 1, nb, prefix = 'Progress:', suffix = 'Complete', length = 50)
+
+    # idea: delete duration with constant signal to reduce space
+    # --> not a good idea, since AWCC is based on entire signal
+
+    # data_type = np.int8
+    # shape = (len(signal),)
+    # del_idx = np.zeros(shape,dtype=np.int8)
+
+    # def process(kk):
+    #     if (signal[(kk-1):(kk+2),:] == 0).all():
+    #         # delete this row
+    #         del_idx[kk] = True
+
+    # t1 = time.time()
+    # for kk in range(1,len(signal)-1):
+    #         process(kk)
+    # t2 = time.time()
+    # print(f'time = {t2-t1}s')
+
+    # signal = np.delete(signal,del_idx.nonzero(),0)
+    # t_probe = np.delete(t_probe,del_idx.nonzero(),0)
+
     # Create the H5-file writer
     writer = H5Writer(path / 'binary_signal.h5', 'w')
     # Write the time vector
