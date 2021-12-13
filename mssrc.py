@@ -18,6 +18,8 @@ import decimal
 from scipy import signal
 from decimal import *
 from itertools import combinations
+from joblib import Parallel, delayed
+
 try:
     from dataio.H5Writer import H5Writer
     from dataio.H5Reader import H5Reader
@@ -194,7 +196,7 @@ def velocity(n_lags, delta_x, f_sample, S1, S2):
         Rxymax_nofilter = corr[lagsRxymax]
         Vx_nofilter = (delta_x)/tau[lagsRxymax]
         # filtering based on SPRthres and Rxymaxthres
-        if  (Rxymax > ((SPR**2 + 1)*0.4)):              # length(lagsRxymax)==1
+        if  (Rxymax > ((SPR**2.0 + 1.0)*0.4)):              # length(lagsRxymax)==1
             # pseudo-instantaneous velocity (m/s)
             Vx = (delta_x)/tau[lagsRxymax]
         else:
@@ -268,7 +270,20 @@ def roc(u):
             u_filt[ii,:] = u[ii,:]
     return u_filt
 
-def run_sig_proc_awcc(path, args, config, sensor_ids, t_signal, signal):
+def calc_velocity_awwcc(ii, start, stop, signal, f_sample, delta_x, args):
+    n_lags = int(stop[ii] - start[ii])              # lags correspond to time windows
+    S1 = signal[start[ii]:stop[ii],0]               # raw signals leading tip
+    S2 = signal[start[ii]:stop[ii],1]               # raw signals trailing tip
+    c_inst = np.mean(S1)                            # void fraction inside a window
+    _,_,f_inst = chord(S1,(n_lags/f_sample))        # get F inside a window
+    u_inst,Rxymax,SPR,u_inst_nofilter,Rxymax_nofilter,SPR_nofilter = velocity(n_lags,delta_x,f_sample,S1,S2) # pseudo-instantaneous velocities
+    tmp = pd.DataFrame(np.array([n_lags,u_inst,f_inst,c_inst,Rxymax,SPR,u_inst_nofilter,Rxymax_nofilter,SPR_nofilter])[np.newaxis, :], index=[ii], columns=['n_lags','u_inst','f_inst','c_inst','Rxymax','SPR','u_inst_nofilter','Rxymax_nofilter','SPR_nofilter'])
+    # Display progress
+    if args.progress:
+        printProgressBar(ii, n_windows, prefix = 'Progress:', suffix = 'Complete', length = 50)
+    return tmp
+
+def run_sig_proc_awcc(path, args, config, sensor_ids, t_signal, signal, nthreads):
     """
         Averaging Windows Cross-Correlation signal processing for dual-tip
         probes.
@@ -296,48 +311,33 @@ def run_sig_proc_awcc(path, args, config, sensor_ids, t_signal, signal):
     print('Determining the windows.\n\n')
     n_windows,start,stop,t = windows(chord_a,chord_w,n_particles,f_sample, progress=args.progress)
     
-    # initialize some variables
-    n_lags = np.empty(n_windows, dtype='int8')*-99999       # dummy multiplication to avoid access error
-    cinstloop = np.empty(n_windows)
-    finstloop = np.empty(n_windows)
-    uinstloop = np.empty(n_windows)
-    Rxymaxloop = np.empty(n_windows)
-    SPRloop = np.empty(n_windows)
-    uinstloop_nofilter = np.empty(n_windows)
-    Rxymaxloop_nofilter = np.empty(n_windows)
-    SPRloop_nofilter = np.empty(n_windows)
+    # t2 = time.time()
+    # print(f'time = {t2-t1}')
 
-    # loop over windows
-    print('Calculating the velocity for all windows.\n\n')
-    for ii in range(0,n_windows-1):
-        n_lags[ii] = int(stop[ii] - start[ii])              # lags correspond to time windows
-        S1 = signal[start[ii]:stop[ii],0]                   # raw signals leading tip
-        S2 = signal[start[ii]:stop[ii],1]                   # raw signals trailing tip
-        cinstloop[ii] = np.mean(S1)                         # void fraction inside a window
-        _,_,finstloop[ii] = chord(S1,(n_lags[ii]/f_sample)) # get F inside a window
-        uinstloop[ii],Rxymaxloop[ii],SPRloop[ii],uinstloop_nofilter[ii],Rxymaxloop_nofilter[ii],SPRloop_nofilter[ii] = velocity(n_lags[ii],delta_x,f_sample,S1,S2) # pseudo-instantaneous velocities
-        # Display progress
-        if args.progress:
-            printProgressBar(ii, n_windows, prefix = 'Progress:', suffix = 'Complete', length = 50)
+    t1 = time.time()
+    results = Parallel(n_jobs=nthreads)(delayed(calc_velocity_awwcc)(ii, start, stop, signal, f_sample, delta_x, args) for ii in range(0,n_windows))
+    results = pd.concat(results)
+    t2 = time.time()
+    print(f'time = {t2-t1}')
 
     # plot the figure for evaluation of the filtering
-    evaluate_filtering(path, SPRloop_nofilter, Rxymaxloop_nofilter, uinstloop_nofilter)
+    evaluate_filtering(path, results['SPR_nofilter'], results['Rxymax_nofilter'], results['u_inst_nofilter'])
 
     # save some data for further use
-    np.savetxt(path / 'SPR.csv', SPRloop_nofilter, delimiter=',')
-    np.savetxt(path / 'R12max.csv', Rxymaxloop_nofilter, delimiter=',')
-    np.savetxt(path / 'U.csv', uinstloop_nofilter, delimiter=',')
+    np.savetxt(path / 'SPR.csv',results['SPR_nofilter'], delimiter=',')
+    np.savetxt(path / 'R12max.csv', results['Rxymax_nofilter'], delimiter=',')
+    np.savetxt(path / 'U.csv', results['u_inst_nofilter'], delimiter=',')
 
     # store as bubble properties
     bubbles = []
-    for ii in range(0,len(uinstloop)):
+    for ii in range(0,len(results['u_inst'])):
         ifd_times = pd.DataFrame(index=sensor_ids, columns=['t_2h','t_2h+1'])
         ifd_times['t_2h'][0] = start[ii]/f_sample
         ifd_times['t_2h+1'][0] = stop[ii]/f_sample
         ifd_times['t_2h'][1] = start[ii]/f_sample
         ifd_times['t_2h+1'][1] = stop[ii]/f_sample
         bubble_props = {'ifd_times':ifd_times}
-        bubble_props['velocity'] = np.array([uinstloop[ii],0.0, 0.0])
+        bubble_props['velocity'] = np.array([results['u_inst'][ii],0.0, 0.0])
         bubble_props['diameter'] = np.array([0.0, 0.0])
         bubble_props['if_norm_unit_vecs'] = [np.array([0.0, 0.0, 0.0]), \
                                             np.array([0.0, 0.0, 0.0])]
@@ -842,6 +842,13 @@ def main():
     parser.add_argument('-roc', '--ROC', default='True',
         help='Perform robust outlier cutoff (ROC) based on the maximum' + 
                 'absolute deviation and the universal threshold (True/False).')
+    parser.add_argument(
+        "-n",
+        "--nthreads",
+        metavar="NTHREADS",
+        default=1,
+        help="set the number of threads for parallel execution",
+    )
     parser.add_argument('-p', '--progress', action='store_true',
         help='Show progress bar.')
     args = parser.parse_args()
@@ -885,7 +892,8 @@ def main():
                                                 config,
                                                 sensor_ids,
                                                 t_signal,
-                                                signal)
+                                                signal,
+                                                int(args.nthreads))
             # interfacial area concentration cannot be estimated with AWCC
             IAC = math.nan
             print(f"\nDetected {len(bubbles_complete)} averaging windows.")
