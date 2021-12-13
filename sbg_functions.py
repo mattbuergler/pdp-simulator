@@ -6,6 +6,9 @@ import bisect
 import random
 import time
 import math
+from joblib import Parallel, delayed, load, dump
+from pathlib import Path
+import shutil
 
 try:
     from dataio.H5Writer import H5Writer
@@ -445,13 +448,74 @@ def SBG_get_Signal_traj(
     Xinterp = Xinterp.drop(index=t_traj_del)
     return Xinterp.index, Xinterp.values
 
+def get_signal_indices(kk, t_traj, X, X_rand, AT, b_size, um, max_probe_size, t_probe, c_probe, sensor_delta, progress, nb):
+    # Interpolate the location of the bubble at t = AT
+    X_b_AT = SBG_interp_trajectory(t_traj, X, AT[kk])
+    # Estimate timeframe for tracking the movement of bubble kk
+    critical_time_pre = 3.0*np.linalg.norm(b_size[kk,:])/np.linalg.norm(um)
+    critical_time_post = 3.0*(np.linalg.norm(b_size[kk,:]) + \
+                         max_probe_size)/np.linalg.norm(um)
+    t_min = AT[kk] - critical_time_pre
+    t_max = AT[kk] + critical_time_post
+    # Get probe sampling times that lie within the estimated timeframe
+    t_probe_kk = t_probe[(t_probe >= t_min) & (t_probe <= t_max)]
+    # Check if number of samples lies inside the timeframe is larger than 0
+    results = {}
+    if len(t_probe_kk) > 0:
+        # Get the range of the trajectory that encloses this timeframe
+        id_t_min_traj = max(bisect.bisect_left(t_traj, min(t_probe_kk))-1,
+            0)
+        id_t_max_traj = min(bisect.bisect_right(t_traj, max(t_probe_kk))+1,len(t_traj))
+        t_traj_kk = t_traj[id_t_min_traj:id_t_max_traj]
+        X_traj_kk = X[id_t_min_traj:id_t_max_traj]
+        # Resample the trajectory to the sampling times of the probe
+        t_resampled, X_resampled = SBG_get_Signal_traj(t_traj_kk, \
+                            X_traj_kk, t_probe_kk)
+        # Get probe locations that lie within the estimated timeframe
+        c_probe_kk = c_probe[(t_probe >= t_min) & (t_probe <= t_max),:]
+        # Set x-coordinate of probe to x-coordinate ob bubble center at AT
+        c_probe_kk[:,0] = X_b_AT[0]
+        # Set y-coordinate of probe to y-coordinate ob bubble center + random
+        # shift with ~Uniform[-B/2,B/2]
+        c_probe_kk[:,1] = c_probe_kk[:,1] + X_b_AT[1] + X_rand[kk,0]
+        # Set z-coordinate of probe to z-coordinate ob bubble center + random
+        # shift with ~Uniform[-B/2,B/2]
+        c_probe_kk[:,2] = c_probe_kk[:,2] + X_b_AT[2] + X_rand[kk,1]
+        # Loop over all time steps within the timeframe
+        abc = b_size[kk,:] / 2.0
+        # Determine the row in the signal time series where to write the signal
+        row = np.where(t_probe == min(t_probe_kk))[0][0]
+        # Loop over each sensor and check if it is inside the bubble
+        results = {}
+        for idx,delta in sensor_delta.items():
+            # Check if ellipsoid is pierced by sensor idx
+            # Standard euqation: (x/a)2 + (y/b)2 + (z/c)2 = 1
+            # with x = (cx+delta - x_bubble)
+            radius = \
+                    (((c_probe_kk[:,0]+delta[0])-X_resampled[:,0])/abc[0])**2 \
+                  + (((c_probe_kk[:,1]+delta[1])-X_resampled[:,1])/abc[1])**2 \
+                  + (((c_probe_kk[:,2]+delta[2])-X_resampled[:,2])/abc[2])**2
+            # Check for which time steps the bubble is pierced
+            idxs = np.where(radius <= 1) + row
+            # pierced, set signal to 1
+            results[idx] = idxs
+        # Display progress
+        if progress:
+            printProgressBar(kk + 1, nb, prefix = 'Progress:', suffix = 'Complete', length = 50)
+        return results
+    else:
+        for idx,delta in sensor_delta.items():
+            results[idx] = np.array([])
+        return results
+
 def SBG_signal(
     path,
     flow_properties,
     probe,
     reproducible,
     uncertainty,
-    progress):
+    progress,
+    nthreads):
 
     """Generate the bubble field, place probe and collect signal.
 
@@ -462,6 +526,7 @@ def SBG_signal(
         probe             (dict): A dictionary containing the probe properties
         reproducible    (string): A string defining the reproducibility
         progress          (bool): A flag to print the progress
+        nthreads           (int): Number of jobs to start for parallel runs
 
         Returns
         ----------
@@ -502,6 +567,10 @@ def SBG_signal(
     AT = np.zeros(len(iat))
     for kk in range(1,len(iat)):
         AT[kk] = AT[kk-1] + iat[kk];
+
+    # Get the random probe displacement with regard to the center of the bubble
+    X_rand = np.transpose(np.array([np.random.uniform(-b_size[:,1]/2.0,b_size[:,1]/2.0),
+                                    np.random.uniform(-b_size[:,2]/2.0,b_size[:,2]/2.0)]))
 
     # Create the H5-file writer
     writer = H5Writer(path / 'flow_data.h5', 'a')
@@ -556,60 +625,13 @@ def SBG_signal(
 
     # Initialize signals to zero
     signal = np.zeros((n_probe, n_sensors)).astype('uint8')
-    # Loop over all bubbles
-    print('\nSampling the sensor signal')
-    for kk in range(0,nb):
-        # Interpolate the location of the bubble at t = AT
-        X_b_AT = SBG_interp_trajectory(t_traj, X, AT[kk])
-        # Estimate timeframe for tracking the movement of bubble kk
-        critical_time_pre = 3.0*np.linalg.norm(b_size[kk,:])/np.linalg.norm(um)
-        critical_time_post = 3.0*(np.linalg.norm(b_size[kk,:]) + \
-                             max_probe_size)/np.linalg.norm(um)
-        t_min = AT[kk] - critical_time_pre
-        t_max = AT[kk] + critical_time_post
-        # Get probe sampling times that lie within the estimated timeframe
-        t_probe_kk = t_probe[(t_probe >= t_min) & (t_probe <= t_max)]
-        # Check if number of samples lies inside the timeframe is larger than 0
-        if len(t_probe_kk) > 0:
-            # Get the range of the trajectory that encloses this timeframe
-            id_t_min_traj = max(bisect.bisect_left(t_traj, min(t_probe_kk))-1,
-                0)
-            id_t_max_traj = min(bisect.bisect_right(t_traj, max(t_probe_kk))+1,len(t_traj))
-            t_traj_kk = t_traj[id_t_min_traj:id_t_max_traj]
-            X_traj_kk = X[id_t_min_traj:id_t_max_traj]
-            # Resample the trajectory to the sampling times of the probe
-            t_resampled, X_resampled = SBG_get_Signal_traj(t_traj_kk, \
-                                X_traj_kk, t_probe_kk)
-            # Get probe locations that lie within the estimated timeframe
-            c_probe_kk = c_probe[(t_probe >= t_min) & (t_probe <= t_max),:]
-            # Set x-coordinate of probe to x-coordinate ob bubble center at AT
-            c_probe_kk[:,0] = X_b_AT[0]
-            # Set y-coordinate of probe to y-coordinate ob bubble center + random
-            # shift with ~Uniform[-B/2,B/2]
-            c_probe_kk[:,1] = c_probe_kk[:,1] + X_b_AT[1] + random.uniform(-b_size[kk,1]/2.0,b_size[kk,1]/2.0)
-            # Set z-coordinate of probe to z-coordinate ob bubble center + random
-            # shift with ~Uniform[-B/2,B/2]
-            c_probe_kk[:,2] = c_probe_kk[:,2] + X_b_AT[2] + random.uniform(-b_size[kk,2]/2.0,b_size[kk,2]/2.0)
-            # Loop over all time steps within the timeframe
-            abc = b_size[kk,:] / 2.0
-            # Determine the row in the signal time series where to write the signal
-            row = np.where(t_probe == min(t_probe_kk))[0][0]
-            # Loop over each sensor and check if it is inside the bubble
-            for idx,delta in sensor_delta.items():
-                # Check if ellipsoid is pierced by sensor idx
-                # Standard euqation: (x/a)2 + (y/b)2 + (z/c)2 = 1
-                # with x = (cx+delta - x_bubble)
-                radius = \
-                        (((c_probe_kk[:,0]+delta[0])-X_resampled[:,0])/abc[0])**2 \
-                      + (((c_probe_kk[:,1]+delta[1])-X_resampled[:,1])/abc[1])**2 \
-                      + (((c_probe_kk[:,2]+delta[2])-X_resampled[:,2])/abc[2])**2
-                # Check for which time steps the bubble is pierced
-                idxs = np.where(radius <= 1) + row
-                # pierced, set signal to 1
-                signal[idxs,idx] = 1;
-            # Display progress
-            if progress:
-                printProgressBar(kk + 1, nb, prefix = 'Progress:', suffix = 'Complete', length = 50)
+    # get the indices of the signal where piercing happened
+    results = Parallel(n_jobs=nthreads)(delayed(get_signal_indices)(kk, t_traj, X, X_rand, AT, b_size, um, max_probe_size, t_probe, c_probe, sensor_delta, progress, nb) for kk in range(0,nb))
+    # set those indices to 1
+    for bubble in results:
+        for key in bubble:
+            signal[bubble[key],key] = 1
+
 
     # idea: delete duration with constant signal to reduce space
     # --> not a good idea, since AWCC is based on entire signal

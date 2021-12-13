@@ -521,6 +521,10 @@ def run_event_detection(args, aux_sensor_ids, max_t_k, sensor_ids, t_signal, sig
                 # lag too large
                 ifd_times['t_2h+1'][k] = np.nan
                 ok = False
+            if math.isnan(lag_2h) | math.isnan(lag_2h):
+                ok = False
+                ifd_times['t_2h'][k] = np.nan
+                ifd_times['t_2h+1'][k] = np.nan
             # store IDs of sensors which recorded a valid signal
             if ok:
                 aux_sensors_complete.append(k)

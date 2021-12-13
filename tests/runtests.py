@@ -70,6 +70,13 @@ if __name__ != "main":
         "-r", "--run", action="store_true", help="run the tests"
     )
     parser.add_argument(
+        "-n",
+        "--nthreads",
+        metavar="NTHREADS",
+        default=1,
+        help="set the number of threads for parallel execution",
+    )
+    parser.add_argument(
         "-b", "--bin",
         metavar="bin",
         type=str,
@@ -88,6 +95,7 @@ if __name__ != "main":
     config['velocity_tsa'] = args["velocity_tsa"]
     config['ROC'] = args["ROC"]
     config['bin'] = args["bin"]
+    config['nthreads'] = str(args["nthreads"])
 
     runner = TestRunner(config)
     # and the tests

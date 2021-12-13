@@ -38,6 +38,7 @@ class TestRunner:
         self.velocity_tsa = config['velocity_tsa']
         self.roc = config['ROC']
         self.bin = config['bin']
+        self.nthreads = config['nthreads']
         self.tests = []  # type: typing.List[str]
 
 
@@ -245,6 +246,8 @@ class TestRunner:
         ]
         cmd.append("-r")
         cmd.append(testDef['SBG'])
+        cmd.append("-n")
+        cmd.append(self.nthreads)
         if self.velocity_tsa:
             cmd.append("-tsa")
         cmd.append(".")
