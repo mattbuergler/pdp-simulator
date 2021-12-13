@@ -275,6 +275,8 @@ class TestRunner:
             str(mag_vel),
             "-roc",
             str(self.roc),
+            "-n",
+            self.nthreads,
             "."
             ]
         return self.runCommon(cmd, testDirectory, "a")

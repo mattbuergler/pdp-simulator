@@ -626,7 +626,7 @@ def SBG_signal(
     # Initialize signals to zero
     signal = np.zeros((n_probe, n_sensors)).astype('uint8')
     # get the indices of the signal where piercing happened
-    results = Parallel(n_jobs=nthreads)(delayed(get_signal_indices)(kk, t_traj, X, X_rand, AT, b_size, um, max_probe_size, t_probe, c_probe, sensor_delta, progress, nb) for kk in range(0,nb))
+    results = Parallel(n_jobs=nthreads,backend='multiprocessing')(delayed(get_signal_indices)(kk, t_traj, X, X_rand, AT, b_size, um, max_probe_size, t_probe, c_probe, sensor_delta, progress, nb) for kk in range(0,nb))
     # set those indices to 1
     for bubble in results:
         for key in bubble:

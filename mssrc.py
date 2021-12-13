@@ -283,7 +283,7 @@ def calc_velocity_awwcc(ii, start, stop, signal, f_sample, delta_x, args):
         printProgressBar(ii, n_windows, prefix = 'Progress:', suffix = 'Complete', length = 50)
     return tmp
 
-def run_sig_proc_awcc(path, args, config, sensor_ids, t_signal, signal, nthreads):
+def run_sig_proc_awcc(path, args, config, sensor_ids, t_signal, signal):
     """
         Averaging Windows Cross-Correlation signal processing for dual-tip
         probes.
@@ -315,7 +315,7 @@ def run_sig_proc_awcc(path, args, config, sensor_ids, t_signal, signal, nthreads
     # print(f'time = {t2-t1}')
 
     t1 = time.time()
-    results = Parallel(n_jobs=nthreads)(delayed(calc_velocity_awwcc)(ii, start, stop, signal, f_sample, delta_x, args) for ii in range(0,n_windows))
+    results = Parallel(n_jobs=int(args.nthreads))(delayed(calc_velocity_awwcc)(ii, start, stop, signal, f_sample, delta_x, args) for ii in range(0,n_windows))
     results = pd.concat(results)
     t2 = time.time()
     print(f'time = {t2-t1}')
@@ -393,6 +393,119 @@ def get_sensor_distance_vectors(config):
 
     return aux_sensor_ids, max_t_k, S_0k_mag, S_0k, cos_eta_0k
 
+def run_interface_pairing(idx_rise_0, id0, max_t_k, signal, signal_ifd, sensor_ids, aux_sensor_ids, t_signal_ifd_list, args):
+    # DataFrame with time of IFD of front (2h) and rear (2h+1) bubble
+    # interface for each sensor
+    ifd_times = pd.DataFrame(index=sensor_ids, columns=['t_2h','t_2h+1'])
+    # Main Sensor 0
+    # Write t_2h of sensor 0
+    ifd_times['t_2h'][0] = t_signal_ifd_list[idx_rise_0]
+    # Search for t_2h+1
+    # Indices of the falling IFD signals for main sensor 0
+    signal_ifd_fall_0 = np.where(signal_ifd[:,id0] < 0.0)[0]
+    # Index of the falling IFD signal for main sensor 0
+    idx_fall_0 = min(signal_ifd_fall_0[signal_ifd_fall_0 > idx_rise_0])
+    # Write t_b+1 of sensor 0
+    ifd_times['t_2h+1'][0] = t_signal_ifd_list[idx_fall_0]
+
+    # Auxillary sensors k
+    for k in aux_sensor_ids:
+        idk = np.where(sensor_ids == k)[0][0]
+        # Check if sensor is currently in air (1) or water (0) to determine
+        # the search direction in time (backward or forward)
+        phase = signal[idk]
+        if phase == 0:
+            # Sensor k is currently in water phase -> search forward
+            # Rising IFD signal
+            # Indices of the rising IFD signals for aux. sensor k
+            signal_ifd_rise_k = np.where(signal_ifd[:,idk] > 0.0)[0]
+            # Ahead of rising IFD signal of sensor 0
+            signal_ifd_rise_k = signal_ifd_rise_k[signal_ifd_rise_k > idx_rise_0]
+            # Index of the rising IFD signal for aux. sensor k closest to
+            # idx_rise_0
+            if len(signal_ifd_rise_k) > 0:
+                idx_rise_k = min(signal_ifd_rise_k)
+            else:
+                # no rising IFD signal before t_2h of main sensor, NaN
+                idx_rise_k = np.nan
+
+        elif phase == 1:
+            # Sensor k is currently in air phase -> search backward
+            # Rising IFD signal
+            # Indices of the rising IFD signals for aux. sensor k
+            signal_ifd_rise_k = np.where(signal_ifd[:,idk] > 0.0)[0]
+            # Behind of rising IFD signal of sensor 0
+            signal_ifd_rise_k = signal_ifd_rise_k[signal_ifd_rise_k <= idx_rise_0]
+
+            # Index of the rising IFD signal for aux. sensor k closest to
+            # idx_rise_0
+            if len(signal_ifd_rise_k) > 0:
+                idx_rise_k = max(signal_ifd_rise_k)
+            else:
+                # no rising IFD signal before t_2h of main sensor, NaN
+                idx_rise_k = np.nan
+        # Search for t_2h+1 of sensor k
+        if not np.isnan(idx_rise_k):
+            # Indices of the falling IFD signals for main sensor k
+            signal_ifd_fall_k = np.where(signal_ifd[:,idk] < 0.0)[0]
+            signal_ifd_fall_k = signal_ifd_fall_k[signal_ifd_fall_k > idx_rise_k]
+            # Index of the falling IFD signal for main sensor k
+            idx_fall_k = min(signal_ifd_fall_k)
+        else:
+            idx_fall_k = np.nan
+
+        # Store the time of IFD of front (2h) and rear (2h+1) bubble
+        # interface for each sensor
+        # Write t_2h of sensor k
+        if not np.isnan(idx_rise_k):
+            ifd_times['t_2h'][k] = t_signal_ifd_list[idx_rise_k]
+        else:
+            ifd_times['t_2h'][k] = np.nan
+        # Write t_2h+1 of sensor k
+        if not np.isnan(idx_fall_k):
+            ifd_times['t_2h+1'][k] = t_signal_ifd_list[idx_fall_k]
+        else:
+            ifd_times['t_2h+1'][k] = np.nan
+
+    # Check for each sensor if IFD times of front (2h) and rear (2h+1)
+    # interface fall within the range for the lag between signal of sensors 0
+    # and signal of sensor k from Eq. (42) in Shen et al. (2005)
+    aux_sensors_complete = []
+    for k in aux_sensor_ids:
+        ok = True
+        # first interface (2h)
+        lag_2h = abs(Decimal(ifd_times['t_2h'][0]) - Decimal(ifd_times['t_2h'][k]))
+        if lag_2h.compare(max_t_k[k]) == 1:
+            # lag too large
+            ifd_times['t_2h'][k] = np.nan
+            ok = False
+        # second interface (2h+1)
+        lag_2hp1 = abs(Decimal(ifd_times['t_2h+1'][0]) - Decimal(ifd_times['t_2h+1'][k]))
+        if lag_2hp1.compare(max_t_k[k]) == 1:
+            # lag too large
+            ifd_times['t_2h+1'][k] = np.nan
+            ok = False
+        if math.isnan(lag_2h) | math.isnan(lag_2h):
+            ok = False
+            ifd_times['t_2h'][k] = np.nan
+            ifd_times['t_2h+1'][k] = np.nan
+        # store IDs of sensors which recorded a valid signal
+        if ok:
+            aux_sensors_complete.append(k)
+    # store sensors with valid signal as bubble property
+    bubble_props = {'aux_sensors_complete':aux_sensors_complete}
+
+    # Store the interface detection times for complete and
+    # incomplete bubbles
+    bubble_props['ifd_times'] = ifd_times
+
+    # Display progress
+    # if args.progress:
+    #     printProgressBar(ii, len(signal_ifd_rise_0), prefix = 'Progress:', suffix = 'Complete', length = 50)
+
+    return bubble_props
+
+
 def run_event_detection(args, aux_sensor_ids, max_t_k, sensor_ids, t_signal, signal):
     """
         This is the event-detection (ED) algorithm, based on interface pairing.
@@ -415,8 +528,8 @@ def run_event_detection(args, aux_sensor_ids, max_t_k, sensor_ids, t_signal, sig
     # Get average time for each difference
     t_signal_ifd_list = []
     for ii in range(0,len(t_signal)-1):
-        t_signal_ifd_list.append(str(Decimal(t_signal[ii]) \
-            + (Decimal(t_signal[ii+1])-Decimal(t_signal[ii]))/Decimal(2.0)))
+        t_signal_ifd_list.append(Decimal(t_signal[ii]) \
+            + (Decimal(t_signal[ii+1])-Decimal(t_signal[ii]))/Decimal(2.0))
 
     # Interface-pairing signal-processing scheme
     # Shen et al. (2005)
@@ -426,120 +539,8 @@ def run_event_detection(args, aux_sensor_ids, max_t_k, sensor_ids, t_signal, sig
     # Indices of the rising IFD signals for main sensor 0
     signal_ifd_rise_0 = np.where(signal_ifd[:,id0] > 0.0)[0]
     # Initialize lists to store bubbles
-    bubbles = []
     print('\nChecking for complete bubbles....\n')
-    # Loop over rising signal fronts of main sensor 0 and do interface pairing
-    for ii,idx_rise_0 in enumerate(signal_ifd_rise_0):
-        # DataFrame with time of IFD of front (2h) and rear (2h+1) bubble
-        # interface for each sensor
-        ifd_times = pd.DataFrame(index=sensor_ids, columns=['t_2h','t_2h+1'])
-        # Main Sensor 0
-        # Write t_2h of sensor 0
-        ifd_times['t_2h'][0] = t_signal_ifd_list[idx_rise_0]
-
-        # Search for t_2h+1
-        # Indices of the falling IFD signals for main sensor 0
-        signal_ifd_fall_0 = np.where(signal_ifd[:,id0] < 0.0)[0]
-        # Index of the falling IFD signal for main sensor 0
-        idx_fall_0 = min(signal_ifd_fall_0[signal_ifd_fall_0 > idx_rise_0])
-        # Write t_b+1 of sensor 0
-        ifd_times['t_2h+1'][0] = t_signal_ifd_list[idx_fall_0]
-        # Auxillary sensors k
-        for k in aux_sensor_ids:
-            idk = np.where(sensor_ids == k)[0][0]
-            # Check if sensor is currently in air (1) or water (0) to determine
-            # the search direction in time (backward or forward)
-            phase = signal[idx_rise_0, idk]
-            if phase == 0:
-                # Sensor k is currently in water phase -> search forward
-                # Rising IFD signal
-                # Indices of the rising IFD signals for aux. sensor k
-                signal_ifd_rise_k = np.where(signal_ifd[:,idk] > 0.0)[0]
-                # Ahead of rising IFD signal of sensor 0
-                signal_ifd_rise_k = signal_ifd_rise_k[signal_ifd_rise_k > idx_rise_0]
-                # Index of the rising IFD signal for aux. sensor k closest to
-                # idx_rise_0
-                if len(signal_ifd_rise_k) > 0:
-                    idx_rise_k = min(signal_ifd_rise_k)
-                else:
-                    # no rising IFD signal before t_2h of main sensor, NaN
-                    idx_rise_k = np.nan
-
-            elif phase == 1:
-                # Sensor k is currently in air phase -> search backward
-                # Rising IFD signal
-                # Indices of the rising IFD signals for aux. sensor k
-                signal_ifd_rise_k = np.where(signal_ifd[:,idk] > 0.0)[0]
-                # Behind of rising IFD signal of sensor 0
-                signal_ifd_rise_k = signal_ifd_rise_k[signal_ifd_rise_k <= idx_rise_0]
-
-                # Index of the rising IFD signal for aux. sensor k closest to
-                # idx_rise_0
-                if len(signal_ifd_rise_k) > 0:
-                    idx_rise_k = max(signal_ifd_rise_k)
-                else:
-                    # no rising IFD signal before t_2h of main sensor, NaN
-                    idx_rise_k = np.nan
-            # Search for t_2h+1 of sensor k
-            if not np.isnan(idx_rise_k):
-                # Indices of the falling IFD signals for main sensor k
-                signal_ifd_fall_k = np.where(signal_ifd[:,idk] < 0.0)[0]
-                signal_ifd_fall_k = signal_ifd_fall_k[signal_ifd_fall_k > idx_rise_k]
-                # Index of the falling IFD signal for main sensor k
-                idx_fall_k = min(signal_ifd_fall_k)
-            else:
-                idx_fall_k = np.nan
-
-            # Store the time of IFD of front (2h) and rear (2h+1) bubble
-            # interface for each sensor
-            # Write t_2h of sensor k
-            if not np.isnan(idx_rise_k):
-                ifd_times['t_2h'][k] = t_signal_ifd_list[idx_rise_k]
-            else:
-                ifd_times['t_2h'][k] = np.nan
-            # Write t_2h+1 of sensor k
-            if not np.isnan(idx_fall_k):
-                ifd_times['t_2h+1'][k] = t_signal_ifd_list[idx_fall_k]
-            else:
-                ifd_times['t_2h+1'][k] = np.nan
-
-        # Check for each sensor if IFD times of front (2h) and rear (2h+1)
-        # interface fall within the range for the lag between signal of sensors 0
-        # and signal of sensor k from Eq. (42) in Shen et al. (2005)
-        aux_sensors_complete = []
-        for k in aux_sensor_ids:
-            ok = True
-            # first interface (2h)
-            lag_2h = abs(Decimal(ifd_times['t_2h'][0]) - Decimal(ifd_times['t_2h'][k]))
-            if lag_2h.compare(max_t_k[k]) == 1:
-                # lag too large
-                ifd_times['t_2h'][k] = np.nan
-                ok = False
-            # second interface (2h+1)
-            lag_2hp1 = abs(Decimal(ifd_times['t_2h+1'][0]) - Decimal(ifd_times['t_2h+1'][k]))
-            if lag_2hp1.compare(max_t_k[k]) == 1:
-                # lag too large
-                ifd_times['t_2h+1'][k] = np.nan
-                ok = False
-            if math.isnan(lag_2h) | math.isnan(lag_2h):
-                ok = False
-                ifd_times['t_2h'][k] = np.nan
-                ifd_times['t_2h+1'][k] = np.nan
-            # store IDs of sensors which recorded a valid signal
-            if ok:
-                aux_sensors_complete.append(k)
-
-        # store sensors with valid signal as bubble property
-        bubble_props = {'aux_sensors_complete':aux_sensors_complete}
-
-        # Store the interface detection times for complete and
-        # incomplete bubbles
-        bubble_props['ifd_times'] = ifd_times
-
-        bubbles.append(bubble_props)
-        # Display progress
-        if args.progress:
-            printProgressBar(ii, len(signal_ifd_rise_0), prefix = 'Progress:', suffix = 'Complete', length = 50)
+    bubbles = Parallel(n_jobs=int(args.nthreads),backend='threading')(delayed(run_interface_pairing)(idx_rise_0, id0, max_t_k, signal[idx_rise_0,:], signal_ifd, sensor_ids, aux_sensor_ids, t_signal_ifd_list, args) for idx_rise_0 in signal_ifd_rise_0)
 
     return bubbles
 
@@ -822,6 +823,54 @@ def run_sig_proc_tian(args, aux_sensor_ids, bubble_props, S_0k_mag, S_0k):
 
     return velocity, diameter, if_norm_unit_vecs, iac
 
+def multi_tip_signal_processing(ii, bubble_props, S_0k, S_0k_mag, cos_eta_0k, nb, ra_type, args):
+
+    # Check how many sensors recorded a valid signal
+    sensors_valid = bubble_props['aux_sensors_complete']
+    n_sensors_valid = len(sensors_valid)
+    # can only do reconstruction with 3 or more sensors
+    if (n_sensors_valid >= 3):
+        # get possible
+        sensor_combs = combinations(sensors_valid, 3)
+        # Initialize the variables to store the reconstructed properties
+        vel = np.ones((n_sensors_valid,3))*math.nan
+        diam = np.ones((n_sensors_valid,2))*math.nan
+        iac = np.ones(n_sensors_valid)*math.nan
+        for jj,sensor_comb in enumerate(list(sensor_combs)):
+            if ra_type == "Shen_Nakamura_2014":
+                # Reconstruction algorithm of Shen and Nakamura (2014)
+                # https://doi.org/10.1016/j.ijmultiphaseflow.2013.11.010
+                vel[jj,:],diam[jj,:],_,iac[jj] =\
+                        run_sig_proc_shen(args,
+                                        sensor_comb,
+                                        bubble_props,
+                                        S_0k_mag,
+                                        cos_eta_0k)
+            elif ra_type == "Tian_et_al_2015":
+                # Reconstruction algorithm of Tian et al. (2015)
+                # https://doi.org/10.1016/j.pnucene.2014.08.005
+                vel[jj,:],diam[jj,:],_,iac[jj] =\
+                        run_sig_proc_tian(args,
+                                        sensor_comb,
+                                        bubble_props,
+                                        S_0k_mag,
+                                        S_0k)
+            else:
+                PRINTERRORANDEXIT(f'Reconstruction algorithm '+\
+                    '<{ra_type}> not valid for 4-tip probes.')
+        # Store the computed bubble properties
+        bubble_props['velocity'] = np.nanmean(vel, axis=0)
+        bubble_props['diameter'] = np.nanmean(diam, axis=0)
+        # bubble_props['if_norm_unit_vecs'] =\
+        #                            np.nanmean(if_norm_unit_vec, axis=0)
+        IAC = Decimal(np.nanmean(iac))
+        # Display progress
+        if args.progress:
+            printProgressBar(ii, nb, prefix = 'Progress:', \
+                suffix = 'Complete', length = 50)
+        return [bubble_props, IAC]
+    else:
+        return ['nan', 'nan']
 
 def main():
     """
@@ -892,8 +941,7 @@ def main():
                                                 config,
                                                 sensor_ids,
                                                 t_signal,
-                                                signal,
-                                                int(args.nthreads))
+                                                signal)
             # interfacial area concentration cannot be estimated with AWCC
             IAC = math.nan
             print(f"\nDetected {len(bubbles_complete)} averaging windows.")
@@ -937,57 +985,20 @@ def main():
                                     signal)
 
         print('\nStarting signal processing...\n')
-
         # Initialize the Interfacial Area Concentration (IAC)
         IAC = Decimal(0.0)
-
-        # Loop over bubbles
+        bubbles_complete = []
+        results = []
         for ii,bubble_props in enumerate(bubbles):
-            # Check how many sensors recorded a valid signal
-            sensors_valid = bubble_props['aux_sensors_complete']
-            n_sensors_valid = len(sensors_valid)
-            # can only do reconstruction with 3 or more sensors
-            if (n_sensors_valid >= 3):
-                # get possible
-                sensor_combs = combinations(sensors_valid, 3)
-                # Initialize the variables to store the reconstructed properties
-                vel = np.ones((n_sensors_valid,3))*math.nan
-                diam = np.ones((n_sensors_valid,2))*math.nan
-                iac = np.ones(n_sensors_valid)*math.nan
-                for jj,sensor_comb in enumerate(list(sensor_combs)):
-                    if ra_type == "Shen_Nakamura_2014":
-                        # Reconstruction algorithm of Shen and Nakamura (2014)
-                        # https://doi.org/10.1016/j.ijmultiphaseflow.2013.11.010
-                        vel[jj,:],diam[jj,:],_,iac[jj] =\
-                                run_sig_proc_shen(args,
-                                                sensor_comb,
-                                                bubble_props,
-                                                S_0k_mag,
-                                                cos_eta_0k)
-                    elif ra_type == "Tian_et_al_2015":
-                        # Reconstruction algorithm of Tian et al. (2015)
-                        # https://doi.org/10.1016/j.pnucene.2014.08.005
-                        vel[jj,:],diam[jj,:],_,iac[jj] =\
-                                run_sig_proc_tian(args,
-                                                sensor_comb,
-                                                bubble_props,
-                                                S_0k_mag,
-                                                S_0k)
-                    else:
-                        PRINTERRORANDEXIT(f'Reconstruction algorithm '+\
-                            '<{ra_type}> not valid for 4-tip probes.')
-                # Store the computed bubble properties
-                bubble_props['velocity'] = np.nanmean(vel, axis=0)
-                bubble_props['diameter'] = np.nanmean(diam, axis=0)
-                # bubble_props['if_norm_unit_vecs'] =\
-                #                            np.nanmean(if_norm_unit_vec, axis=0)
-                IAC = IAC + Decimal(np.nanmean(iac))
-                # append to complete bubbles
-                bubbles_complete.append(bubble_props)
-            # Display progress
-            if args.progress:
-                printProgressBar(ii, len(bubbles), prefix = 'Progress:', \
-                    suffix = 'Complete', length = 50)
+            results.append(multi_tip_signal_processing(ii, bubble_props, S_0k, S_0k_mag, cos_eta_0k, len(bubbles), ra_type, args))
+        
+        for bubble in results:
+            if bubble[0] == 'nan':
+                continue
+            else:
+                bubbles_complete.append(bubble[0])
+                IAC = IAC + bubble[1]
+
         IAC = IAC * 2 / (Decimal(t_signal[-1])-Decimal(t_signal[0]))
         # end (n_sensors >= 4)
         print(f"\nDetected {len(bubbles)} bubble signals.")
