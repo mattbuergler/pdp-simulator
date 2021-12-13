@@ -12,6 +12,7 @@ variables:
 .run-parallel-tests-template: &run-parallel-tests-template
   script:
     - pipenv run python tests/runtests.py -n 4 -Cr tests/[0-9]*
+    - cat tests/1_SBG_Timeseries/A_Velocity/run/run.output
 
 test-sequential:
   image: python:3.9.0
