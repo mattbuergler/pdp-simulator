@@ -7,11 +7,11 @@ variables:
 
 .run-sequential-tests-template: &run-sequential-tests-template
   script:
-    - pipenv run python sbg.py -n 1 -r all tests/1_SBG_Timeseries/A_Velocity/run
+    - pipenv run python tests/runtests.py -n 1 -Cr tests/[0-9]*
 
 .run-parallel-tests-template: &run-parallel-tests-template
   script:
-    - pipenv run python sbg.py -n 4 -r all tests/1_SBG_Timeseries/A_Velocity/run
+    - pipenv run python tests/runtests.py -n 4 -Cr tests/[0-9]*
 
 test-sequential:
   image: python:3.9.0
