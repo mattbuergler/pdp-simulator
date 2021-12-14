@@ -12,6 +12,8 @@ import time
 import math
 import matplotlib.pyplot as plt
 import scipy.stats as stats
+from joblib import Parallel, delayed
+
 try:
     from dataio.H5Writer import H5Writer
     from dataio.H5Reader import H5Reader
@@ -19,6 +21,19 @@ try:
 except ImportError:
     print("Error while importing modules")
     raise
+
+
+
+def calc_RST_convergence(ii, velocity, mean_velocity):
+    reynolds_stress = np.empty((ii+1,3,3))
+    for jj in range(0,ii+1):
+        # Calculate velocity fluctuations
+        velocity_fluctuations = velocity[jj,:] - mean_velocity
+        # Reynolds stresses as outer product of fluctuations
+        reynolds_stress[jj,:,:] = np.outer(velocity_fluctuations, \
+                                velocity_fluctuations)
+    # Calculate mean Reynolds stresses
+    return np.nanmean(reynolds_stress, axis=0)
 
 """
     Evaluate the reconstructed data
@@ -35,6 +50,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('path', type=str,
         help="The path to the scenario directory.")
+    parser.add_argument(
+        "-n",
+        "--nthreads",
+        metavar="NTHREADS",
+        default=1,
+        help="set the number of threads for parallel execution",
+    )
     args = parser.parse_args()
 
     # Create Posix path for OS indepency
@@ -51,7 +73,7 @@ def main():
     fp_vel = config['FLOW_PROPERTIES']['mean_velocity']
     fp_dur = config['FLOW_PROPERTIES']['duration']
     fp_ti = config['FLOW_PROPERTIES']['turbulent_intensity']
-
+    n_sensors = len(config['PROBE']['sensors'])
     # Parse velocity time series
     # Create a H5-file reader
     reader = H5Reader(path / 'flow_data.h5')
@@ -144,18 +166,19 @@ def main():
     summary_vel = pd.DataFrame(np.nan, \
             index=['MRMSD_true','MRMSD_rec','mean_epsilon'], \
             columns=['Ux','Uy','Uz'])
-    summary_vel.loc['MRMSD_true',:] = RMSD_vel_true.mean()
-    summary_vel.loc['MRMSD_rec',:] = RMSD_vel_reco.mean()
-    summary_vel.loc['mean_epsilon',:] = ((RMSD_vel_reco/RMSD_vel_true)).mean()
-    summary_vel.loc['ME_rec',:] = E_vel.mean()
-    summary_vel.loc['MRE_rec',:] = RE_vel.mean()
-    summary_vel.loc['MAE_rec',:] = AE_vel.mean()
-    summary_vel.loc['MARE_rec',:] = ARE_vel.mean()
+    summary_vel.loc['MRMSD_true',:] = np.nanmean(RMSD_vel_true,axis=0)
+    summary_vel.loc['MRMSD_rec',:] = np.nanmean(RMSD_vel_reco,axis=0)
+    summary_vel.loc['mean_epsilon',:] = np.nanmean(RMSD_vel_reco/RMSD_vel_true,axis=0)
+    summary_vel.loc['ME_rec',:] = np.nanmean(E_vel,axis=0)
+    summary_vel.loc['MRE_rec',:] = np.nanmean(RE_vel,axis=0)
+    summary_vel.loc['MAE_rec',:] = np.nanmean(AE_vel,axis=0)
+    summary_vel.loc['MARE_rec',:] = np.nanmean(ARE_vel,axis=0)
+    summary_vel.loc['NormErr_rec',:] = summary_vel.loc['MAE_rec',:]/(np.asarray(fp_vel)[0]*np.asarray(fp_ti))
 
     cumulative_mean_AE = np.empty((len(ARE_vel),3))
     # Convergence of mean error with number of bubbles
     for ii in range(0,len(AE_vel)):
-        cumulative_mean_AE[ii,:] = AE_vel.iloc[:ii].mean()
+        cumulative_mean_AE[ii,:] = np.nanmean(AE_vel.iloc[:ii],axis=0)
 
     # Calculate error for bubble size
     b_size = pd.DataFrame(b_size,index=t_b_size, columns=['A','B','C'])
@@ -193,12 +216,12 @@ def main():
                             columns=['D'])
 
     # Store summary of errors
-    summary_b_size['D']['ME'] = errors_D['E'].mean()
-    summary_b_size['D']['MRE'] = errors_D['RE'].mean()
-    summary_b_size['D']['MAE'] = errors_D['E'].abs().mean()
-    summary_b_size['D']['MARE'] = errors_D['RE'].abs().mean()
-    summary_b_size['D']['RMSE'] = math.sqrt(errors_D['SE'].mean())
-    summary_b_size['D']['RMSRE'] = math.sqrt(errors_D['SRE'].abs().mean())
+    summary_b_size['D']['ME'] = np.nanmean(errors_D['E'],axis=0)
+    summary_b_size['D']['MRE'] = np.nanmean(errors_D['RE'],axis=0)
+    summary_b_size['D']['MAE'] = np.nanmean(errors_D['E'].abs(),axis=0)
+    summary_b_size['D']['MARE'] = np.nanmean(errors_D['RE'].abs(),axis=0)
+    summary_b_size['D']['RMSE'] = math.sqrt(np.nanmean(errors_D['SE'],axis=0))
+    summary_b_size['D']['RMSRE'] = math.sqrt(np.nanmean(errors_D['SRE'].abs(),axis=0))
 
     # Calculate true mean velocity and Reynolds stress tensor based on true
     # bubble velocity
@@ -206,16 +229,11 @@ def main():
     mean_vel_true_bubble = np.nanmean(vel_true_bubble, axis=0)
     # Initialize array for reynolds stress based on true mean bubble velocity
     rs_true_bubble = np.empty((len(vel_rec),3,3))
+
     for ii in range(0,len(t_rec)):
         u_x = vel_true_bubble[ii,0] - mean_vel_true_bubble[0]
         u_y = vel_true_bubble[ii,1] - mean_vel_true_bubble[1]
         u_z = vel_true_bubble[ii,2] - mean_vel_true_bubble[2]
-        # if math.isnan(u_x):
-        #     print(ii)
-        # if math.isnan(u_y):
-        #     print(ii)
-        # if math.isnan(u_z):
-        #     print(ii)
         rs_true_bubble[ii,0,0] = u_x*u_x
         rs_true_bubble[ii,0,1] = u_x*u_y
         rs_true_bubble[ii,0,2] = u_x*u_z
@@ -225,6 +243,7 @@ def main():
         rs_true_bubble[ii,2,0] = u_z*u_x
         rs_true_bubble[ii,2,1] = u_z*u_y
         rs_true_bubble[ii,2,2] = u_z*u_z
+
     mean_rs_true_bubble = np.nanmean(rs_true_bubble, axis=0)
     turbulent_intensity_bubble = np.sqrt(np.array([
             mean_rs_true_bubble[0,0], \
@@ -285,35 +304,31 @@ def main():
     rel_error_Ti.to_csv(path / 'rel_error_turbulent_intensity.csv', index=True)
     rel_error_Ti_bubble.to_csv(path / 'rel_error_turbulent_intensity_bubble.csv', index=True)
 
-    # Check convergence of Reynolds
-    # Calculate mean velocity
+    # Check convergence of Reynolds stresses
+    # Calculate reconstructed mean velocity
     mean_vel_rec = np.nanmean(vel_rec, axis=0)
-    mean_reynolds_stress = np.empty((len(vel_rec),3,3))
+    # Calculate reconstructed mean Reynolds stresses 
+    mean_reynolds_stress = Parallel(n_jobs=int(args.nthreads),backend='multiprocessing')(delayed(calc_RST_convergence)(ii, vel_rec, mean_vel_rec)  for ii in range(0,len(vel_rec)))
+    mean_reynolds_stress = np.asarray(mean_reynolds_stress)
+    reynolds_stress = np.empty((len(vel_rec),3,3))
     for ii in range(0,len(vel_rec)):
-        reynolds_stress = np.empty((ii+1,3,3))
-        for jj in range(0,ii+1):
-            # Calculate velocity fluctuations
-            vel_rec_fluct = vel_rec[jj,:] - mean_vel_rec
-            # Reynolds stresses as outer product of fluctuations
-            reynolds_stress[jj,:,:] = np.outer(vel_rec_fluct, \
-                                    vel_rec_fluct)
-        # Calculate mean Reynolds stresses
-        mean_reynolds_stress[ii,:,:] = np.nanmean(reynolds_stress, axis=0)
-
-    # Calculate mean velocity
+        # Calculate velocity fluctuations
+        velocity_fluctuations = vel_rec[ii,:] - mean_vel_rec
+        # Reynolds stresses as outer product of fluctuations
+        reynolds_stress[ii,:,:] = np.outer(velocity_fluctuations, \
+                                velocity_fluctuations)
+    # Calculate true mean velocity
     mean_vel_true = np.nanmean(vel_true_bubble, axis=0)
-    mean_reynolds_stress_true = np.empty((len(vel_true_bubble),3,3))
+    # Calculate true mean Reynolds stresses 
+    mean_reynolds_stress_true = Parallel(n_jobs=int(args.nthreads),backend='multiprocessing')(delayed(calc_RST_convergence)(ii, vel_true_bubble, mean_vel_true)  for ii in range(0,len(vel_rec)))
+    mean_reynolds_stress_true = np.asarray(mean_reynolds_stress_true)
+    reynolds_stress_true = np.empty((len(vel_true_bubble),3,3))
     for ii in range(0,len(vel_true_bubble)):
-        reynolds_stress_true = np.empty((ii+1,3,3))
-        for jj in range(0,ii+1):
-            # Calculate velocity fluctuations
-            vel_true_fluct = vel_true_bubble[jj,:] - mean_vel_true
-            # Reynolds stresses as outer product of fluctuations
-            reynolds_stress_true[jj,:,:] = np.outer(vel_true_fluct, \
-                                    vel_true_fluct)
-        # Calculate mean Reynolds stresses
-        mean_reynolds_stress_true[ii,:,:] = np.nanmean(reynolds_stress_true, axis=0)
-
+        # Calculate velocity fluctuations
+        velocity_fluctuations = vel_true_bubble[ii,:] - mean_vel_true
+        # Reynolds stresses as outer product of fluctuations
+        reynolds_stress_true[ii,:,:] = np.outer(velocity_fluctuations, \
+                                velocity_fluctuations)
     # Compare input / output
     overview = pd.DataFrame(columns=['config','CP','DP','DP_bubble','DP_reconstructed'], \
                             index=['Ux','Uy','Uz','Tau_xx','Tau_yy','Tau_zz','Tau_xy','Tau_xz','Tau_yz','T_Ix','T_Iy','T_Iz'])
@@ -440,6 +455,40 @@ def main():
     axs[2].grid(which='major', axis='both')
     fig.savefig(path / 'velocity_05s.svg',dpi=300)
 
+    # Plot velocity time series
+    color = [0.2,0.2,0.2]
+    lw = 0.2
+    fig, axs = plt.subplots(3,figsize=(6,4))
+    axs[0].plot(t_true,vel_true[:,0],color=color,lw=lw)
+    axs[1].plot(t_true,vel_true[:,1],color=color,lw=lw)
+    axs[2].plot(t_true,vel_true[:,2],color=color,lw=lw)
+    axs[0].plot(np.mean(t_rec,axis=1), vel_rec[:,0], color='r', \
+                lw=0,marker='o')
+    axs[1].plot(np.mean(t_rec,axis=1), vel_rec[:,1], color='r', \
+                lw=0,marker='o')
+    axs[2].plot(np.mean(t_rec,axis=1), vel_rec[:,2], color='r', \
+                lw=0,marker='o')
+    axs[0].set_ylabel('$u_x$ [m/s]')
+    axs[1].set_ylabel('$u_y$ [m/s]')
+    axs[2].set_ylabel('$u_z$ [m/s]')
+    axs[2].set_xlabel('$t$ [s]')
+    lim = [[fp_vel[0] - 1.2*max(abs(vel_true[:,0]-fp_vel[0])),
+            fp_vel[0] + 1.2*max(abs(vel_true[:,0]-fp_vel[0]))],
+           [fp_vel[1] - 1.2*max(abs(vel_true[:,1]-fp_vel[1])),
+            fp_vel[1] + 1.2*max(abs(vel_true[:,1]-fp_vel[1]))],
+           [fp_vel[2] - 1.2*max(abs(vel_true[:,2]-fp_vel[2])),
+            fp_vel[2] + 1.2*max(abs(vel_true[:,2]-fp_vel[2]))]]
+    axs[0].set_ylim([lim[0][0],lim[0][1]])
+    axs[1].set_ylim([lim[1][0],lim[1][1]])
+    axs[2].set_ylim([lim[2][0],lim[2][1]])
+    axs[0].set_xlim([0.0,fp_dur])
+    axs[1].set_xlim([0.0,fp_dur])
+    axs[2].set_xlim([0.0,fp_dur])
+    plt.tight_layout()
+    axs[0].grid(which='major', axis='both')
+    axs[1].grid(which='major', axis='both')
+    axs[2].grid(which='major', axis='both')
+    fig.savefig(path / 'velocity_comparison.svg',dpi=300)
 
     fig, axs = plt.subplots(3,figsize=(6,4))
     axs[0].plot(np.linspace(1,len(cumulative_mean_AE),len(cumulative_mean_AE)),cumulative_mean_AE[:,0],color='k',lw=lw)
@@ -562,7 +611,6 @@ def main():
     axs[4].grid(which='major', axis='both')
     axs[5].grid(which='major', axis='both')
     fig.savefig(path / 'absRST_mean_convergence.svg',dpi=300)
-
 
     fig, axs = plt.subplots(6,figsize=(6,6))
     axs[0].plot(np.linspace(1,len(mean_reynolds_stress),len(mean_reynolds_stress)),abs(mean_reynolds_stress[:,0,0]),color='k',lw=1,label='mean, rec.')
@@ -775,7 +823,7 @@ def main():
     fig = plt.figure(figsize=(3.0,2.5))
     (n_p, bins_p, patches_p) = plt.hist(E_vel['Ux'].values, \
             bins=100,density=True, color='b', alpha=0.7,\
-            range=(min(E_vel['Ux'].values),max(E_vel['Ux'].values)))
+            range=(np.nanmin(E_vel['Ux'].values),np.nanmax(E_vel['Ux'].values)))
     plt.ylabel('Frequency [-]')
     plt.xlabel(r'Error $u_x$ [m/s]')
     plt.xlim([min(bins_p),max(bins_p)])
@@ -786,7 +834,7 @@ def main():
     fig = plt.figure(figsize=(3.0,2.5))
     (n_p, bins_p, patches_p) = plt.hist(E_vel['Uy'].values, \
             bins=100,density=True, color='b', alpha=0.7,\
-            range=(min(E_vel['Uy'].values),max(E_vel['Uy'].values)))
+            range=(np.nanmin(E_vel['Uy'].values),np.nanmax(E_vel['Uy'].values)))
     plt.ylabel('Frequency [-]')
     plt.xlabel(r'Error $u_y$ [m/s]')
     plt.xlim([-max(abs(bins_p)),max(abs(bins_p))])
@@ -797,7 +845,7 @@ def main():
     fig = plt.figure(figsize=(3.0,2.5))
     (n_p, bins_p, patches_p) = plt.hist(E_vel['Uz'].values, \
             bins=100,density=True, color='b', alpha=0.7,\
-            range=(min(E_vel['Uz'].values),max(E_vel['Uz'].values)))
+            range=(np.nanmin(E_vel['Uz'].values),np.nanmax(E_vel['Uz'].values)))
     plt.ylabel('Frequency [-]')
     plt.xlabel(r'Error $u_z$ [m/s]')
     plt.xlim([-max(abs(bins_p)),max(abs(bins_p))])
@@ -809,7 +857,7 @@ def main():
     fig = plt.figure(figsize=(3.0,2.5))
     (n_p, bins_p, patches_p) = plt.hist(np.clip(RE_vel['Ux'].values,-1,1),\
             bins=100,density=True, color='b', alpha=0.7,\
-            range=(min(RE_vel['Ux'].values),max(RE_vel['Ux'].values)))
+            range=(np.nanmin(RE_vel['Ux'].values),np.nanmax(RE_vel['Ux'].values)))
     plt.ylabel('Frequency [-]')
     plt.xlabel(r'RE $u_x$ [-]')
     plt.xlim([min(bins_p),max(bins_p)])
@@ -856,7 +904,7 @@ def main():
             range=(min(vel_true[:,jj]),max(vel_true[:,jj])))
         (n_c, bins_c, patches_c) = axs[jj].hist(vel_rec[:,jj], \
             bins=50, density=True, color='g', alpha=0.7, label='reconst. disp.',\
-            range=(min(vel_rec[:,jj]),max(vel_rec[:,jj])))
+            range=(np.nanmin(vel_rec[:,jj]),np.nanmax(vel_rec[:,jj])))
         if jj == 0:
             axs[jj].set_ylabel('Frequency [-]')
             axs[jj].legend(loc=3,fontsize=10,bbox_to_anchor=(-0.15,-0.6),ncol=4,frameon=False)
@@ -869,6 +917,31 @@ def main():
     plt.subplots_adjust(left=0.1, bottom=0.35, right=0.95, top=0.95, wspace=0.3, hspace=None)
     fig.savefig(path / 'velocity_histrograms.svg',dpi=300)
 
+    # Histogram of bubble velocities
+    var_names = ['x','y','z']
+    # Calculate the magnitude of the input velocities and standard dev.
+    fp_vel_mag = np.sqrt(fp_vel.dot(fp_vel))
+    sigma = fp_vel_mag * np.asarray(fp_ti)
+    fig, axs = plt.subplots(ncols=3,\
+            figsize=(3*2.5,2.5))
+    for jj,var_name in enumerate(var_names):
+        (n_c, bins_c, patches_c) = axs[jj].hist(vel_true[:,jj], \
+            bins=50, density=True, color='r', alpha=0.7, label='sim. disp.',\
+            range=(min(np.nanmin(vel_true[:,jj]),np.nanmin(vel_rec[:,jj])),max(np.nanmax(vel_true[:,jj]),np.nanmax(vel_rec[:,jj]))))
+        (n_c, bins_c, patches_c) = axs[jj].hist(vel_rec[:,jj], \
+            bins=50, density=True, color='g', alpha=0.7, label='reconst. disp.',\
+            range=(min(np.nanmin(vel_true[:,jj]),np.nanmin(vel_rec[:,jj])),max(np.nanmax(vel_true[:,jj]),np.nanmax(vel_rec[:,jj]))))
+        if jj == 0:
+            axs[jj].set_ylabel('Frequency [-]')
+            axs[jj].legend(loc=3,fontsize=10,bbox_to_anchor=(-0.15,-0.6),ncol=4,frameon=False)
+        axs[jj].set_xlabel(f'Velocity $u_{var_name}$ [m/s]')
+        axs[jj].set_xlim([min(np.nanmin(vel_true[:,jj]),np.nanmin(vel_rec[:,jj])),max(np.nanmax(vel_true[:,jj]),np.nanmax(vel_rec[:,jj]))])
+        # if jj == 1:
+        #     axs[jj].set_yscale('log')
+        # if jj == 2:
+        #     axs[jj].set_yscale('log')
+    plt.subplots_adjust(left=0.1, bottom=0.35, right=0.95, top=0.95, wspace=0.3, hspace=None)
+    fig.savefig(path / 'velocity_histrograms_disp.svg',dpi=300)
 
     # Histogram of velocities
     var_names = ['A','B','D','E']
