@@ -310,15 +310,9 @@ def run_sig_proc_awcc(path, args, config, sensor_ids, t_signal, signal):
     chord_w,chord_a,F1 = chord(signal[:,0],duration, progress=args.progress)
     print('Determining the windows.\n\n')
     n_windows,start,stop,t = windows(chord_a,chord_w,n_particles,f_sample, progress=args.progress)
-    
-    # t2 = time.time()
-    # print(f'time = {t2-t1}')
 
-    t1 = time.time()
-    results = Parallel(n_jobs=int(args.nthreads))(delayed(calc_velocity_awwcc)(ii, start, stop, signal, f_sample, delta_x, args) for ii in range(0,n_windows))
+    results = Parallel(n_jobs=int(args.nthreads),backend='multiprocessing')(delayed(calc_velocity_awwcc)(ii, start, stop, signal, f_sample, delta_x, args) for ii in range(0,n_windows))
     results = pd.concat(results)
-    t2 = time.time()
-    print(f'time = {t2-t1}')
 
     # plot the figure for evaluation of the filtering
     evaluate_filtering(path, results['SPR_nofilter'], results['Rxymax_nofilter'], results['u_inst_nofilter'])
