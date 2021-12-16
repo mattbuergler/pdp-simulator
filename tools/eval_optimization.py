@@ -29,11 +29,11 @@ def inverse_den(x):
 path = pathlib.Path().cwd() / 'optimization/probe'
 path_out = pathlib.Path().cwd() / 'optimization/probe/results'
 
-geometries = ['geom1','geom2','geom3','geom4','geom5','geom6','geom7','geom8','geom9','geom10','geom11','geom12']
+geometries = ['geom1','geom2','geom3','geom4','geom5','geom6','geom7','geom8','geom9','geom10','geom11','geom12','geom13','geom1_roc','geom3_roc','geom9_roc','geom10_roc','geom13_2','geom13_4','geom13_8','geom13_12','geom13_16','geom13_20']
 labels = {'geom1':'Probe1','geom2':'Probe2','geom3':'Probe3','geom4':'Probe4',\
           'geom5':'Probe5','geom6':'Probe6','geom7':'Probe7','geom8':'Probe8',\
-          'geom9':'Probe9','geom10':'Probe10','geom11':'Probe11','geom12':'Probe12'}
-runs = ['001','002','003','004','005','006','007','009']
+          'geom9':'Probe9','geom10':'Probe10','geom11':'Probe11','geom12':'Probe12','geom13':'Probe13','geom1_roc':'Probe1 (roc)','geom3_roc':'Probe3 (roc)','geom9_roc':'Probe9 (roc)','geom10_roc':'Probe10 (roc)','geom13_2':'Probe13 (n=2)','geom13_4':'Probe13 (n=4)','geom13_8':'Probe13 (n=8)','geom13_12':'Probe13 (n=12)','geom13_16':'Probe13 (n=16)','geom13_20':'Probe13 (n=20)'}
+runs = ['001','002','003','004','005','006','007','009','010','011']
 
 errors = {}
 ux = {}
@@ -42,48 +42,49 @@ for geom in geometries:
     for run in runs:
         error_tmp = {}
         p = path / geom / run / 'run'
-        u = pd.read_csv(p / 'error_summary_velocity.csv', index_col=0)
-        d = pd.read_csv(p / 'error_summary_bubble_size.csv', index_col=0)
-        # error compared to disp. phase times series
-        um = pd.read_csv(p / 'error_mean_velocity.csv', index_col=0)
-        rs = pd.read_csv(p / 'error_reynolds_stresses.csv', index_col=0)
-        ti = pd.read_csv(p / 'error_turbulent_intensity.csv', index_col=0)
-        # error compared to bubble times series
-        um_b = pd.read_csv(p / 'error_mean_velocity_bubble.csv', index_col=0)
-        rs_b = pd.read_csv(p / 'error_reynolds_stresses_bubble.csv', index_col=0)
-        ti_b = pd.read_csv(p / 'error_turbulent_intensity_bubble.csv', index_col=0)
-        # relative error compared to  disp. phase times series
-        um_rel = pd.read_csv(p / 'rel_error_mean_velocity.csv', index_col=0)
-        rs_rel = pd.read_csv(p / 'rel_error_reynolds_stresses.csv', index_col=0)
-        ti_rel = pd.read_csv(p / 'rel_error_turbulent_intensity.csv', index_col=0)
-        # relative error compared to bubble times series
-        um_rel_b = pd.read_csv(p / 'rel_error_mean_velocity_bubble.csv', index_col=0)
-        rs_rel_b = pd.read_csv(p / 'rel_error_reynolds_stresses_bubble.csv', index_col=0)
-        ti_rel_b = pd.read_csv(p / 'rel_error_turbulent_intensity_bubble.csv', index_col=0)
+        if p.is_dir():
+            u = pd.read_csv(p / 'error_summary_velocity.csv', index_col=0)
+            d = pd.read_csv(p / 'error_summary_bubble_size.csv', index_col=0)
+            # error compared to disp. phase times series
+            um = pd.read_csv(p / 'error_mean_velocity.csv', index_col=0)
+            rs = pd.read_csv(p / 'error_reynolds_stresses.csv', index_col=0)
+            ti = pd.read_csv(p / 'error_turbulent_intensity.csv', index_col=0)
+            # error compared to bubble times series
+            um_b = pd.read_csv(p / 'error_mean_velocity_bubble.csv', index_col=0)
+            rs_b = pd.read_csv(p / 'error_reynolds_stresses_bubble.csv', index_col=0)
+            ti_b = pd.read_csv(p / 'error_turbulent_intensity_bubble.csv', index_col=0)
+            # relative error compared to  disp. phase times series
+            um_rel = pd.read_csv(p / 'rel_error_mean_velocity.csv', index_col=0)
+            rs_rel = pd.read_csv(p / 'rel_error_reynolds_stresses.csv', index_col=0)
+            ti_rel = pd.read_csv(p / 'rel_error_turbulent_intensity.csv', index_col=0)
+            # relative error compared to bubble times series
+            um_rel_b = pd.read_csv(p / 'rel_error_mean_velocity_bubble.csv', index_col=0)
+            rs_rel_b = pd.read_csv(p / 'rel_error_reynolds_stresses_bubble.csv', index_col=0)
+            ti_rel_b = pd.read_csv(p / 'rel_error_turbulent_intensity_bubble.csv', index_col=0)
 
-        error_tmp['u'] = u
-        error_tmp['d'] = d
-        error_tmp['um'] = um
-        error_tmp['rs'] = rs
-        error_tmp['ti'] = ti
-        error_tmp['um_b'] = um_b
-        error_tmp['rs_b'] = rs_b
-        error_tmp['ti_b'] = ti_b
-        error_tmp['rs_rel'] = rs_rel
-        error_tmp['um_rel'] = um_rel
-        error_tmp['ti_rel'] = ti_rel
-        error_tmp['rs_rel_b'] = rs_rel_b
-        error_tmp['um_rel_b'] = um_rel_b
-        error_tmp['ti_rel_b'] = ti_rel_b
+            error_tmp['u'] = u
+            error_tmp['d'] = d
+            error_tmp['um'] = um
+            error_tmp['rs'] = rs
+            error_tmp['ti'] = ti
+            error_tmp['um_b'] = um_b
+            error_tmp['rs_b'] = rs_b
+            error_tmp['ti_b'] = ti_b
+            error_tmp['rs_rel'] = rs_rel
+            error_tmp['um_rel'] = um_rel
+            error_tmp['ti_rel'] = ti_rel
+            error_tmp['rs_rel_b'] = rs_rel_b
+            error_tmp['um_rel_b'] = um_rel_b
+            error_tmp['ti_rel_b'] = ti_rel_b
 
-        errors[f'{geom}_{run}'] = error_tmp
-        overview[f'{geom}_{run}'] = pd.read_csv(p / 'overview.csv', index_col=0)
+            errors[f'{geom}_{run}'] = error_tmp
+            overview[f'{geom}_{run}'] = pd.read_csv(p / 'overview.csv', index_col=0)
 
-        config_file = p / 'config.json'
-        config = json.loads(config_file.read_bytes())
-        # Velocity scale
-        U = config['FLOW_PROPERTIES']['mean_velocity']
-        ux[f'{geom}_{run}'] = U[0]
+            config_file = p / 'config.json'
+            config = json.loads(config_file.read_bytes())
+            # Velocity scale
+            U = config['FLOW_PROPERTIES']['mean_velocity']
+            ux[f'{geom}_{run}'] = U[0]
 
 
 # Plot parameters
@@ -102,8 +103,11 @@ tau = r'$\tau$'
 
 # Plot errors and rel. errors compared to disp. phase time series
 
-geometries = ['geom1','geom2','geom3','geom4','geom5','geom6','geom7','geom8','geom9','geom10','geom11','geom12']
-runs = ['001','002','003','004','005','006','007','009']
+#geometries = ['geom1','geom2','geom3','geom4','geom5','geom6','geom7','geom8','geom9','geom10','geom11','geom12']
+#geometries = ['geom1','geom2','geom3','geom4','geom9','geom10','geom13']
+geometries = ['geom1']
+#runs = ['001','002','003','004','005','006','007']
+runs = ['006','010','011']
 
 # v_labels = {'Ux':'u_x','Uy':'u_y','Uz':'u_z'}
 # y_lims = [[0,5],[0,10],[0,10]]
@@ -136,7 +140,7 @@ runs = ['001','002','003','004','005','006','007','009']
 # fig.savefig(path_out / 'MAE_u_bars_new.svg',dpi=300)
 
 v_labels = {'Ux':'u_x','Uy':'u_y','Uz':'u_z'}
-y_lims = [[0,20],[0,25],[0,25]]
+y_lims = [[0,5],[0,25],[0,25]]
 precision = [1,1,1]
 var = 'u'
 variables = ['Ux','Uy','Uz']
@@ -458,7 +462,7 @@ fig.savefig(path_out / 'AE_um_bubble_bars.svg',dpi=300)
 # Plot actual value comparison
 
 v_labels = {'Ux':r'\bar{u}_x','Uy':r'\bar{u}_y','Uz':r'\bar{u}_z'}
-y_lims = [[0,25],[-0.01,0.01],[-0.02,0.01]]
+y_lims = [[0,25],[-0.02,0.0],[-0.015,0.01]]
 variables = ['Ux','Uy','Uz']
 precision = [1,4,4]
 N = len(geometries)
@@ -493,7 +497,7 @@ fig.savefig(path_out / 'Overview_U_bars.svg',dpi=300)
 
 
 v_labels = {'Tau_xx':r'\bar{\tau}_{xx}','Tau_yy':r'\bar{\tau}_{yy}','Tau_zz':r'\bar{\tau}_{zz}','Tau_xy':r'\bar{\tau}_{xy}','Tau_xz':r'\bar{\tau}_{xz}','Tau_yz':r'\bar{\tau}_{yz}'}
-y_lims = [[0,0.08],[0,0.04],[0.0,0.06],[-0.012,0.0],[-0.005,0.004],[-0.0005,0.0005]]
+y_lims = [[0,0.08],[0,0.08],[0.0,0.04],[-0.006,0.006],[-0.01,0.0],[-0.0005,0.0005]]
 variables = ['Tau_xx','Tau_yy','Tau_zz','Tau_xy','Tau_xz','Tau_yz']
 precision = [5,5,5,5,5,5]
 N = len(geometries)
@@ -512,7 +516,7 @@ for kk,v in enumerate(variables):
             y.append(overview[f'{geom}_{run}']['DP_reconstructed'][v])
         rects[ii] = axs[kk].bar(x + shifts[ii], y, w, color=cmap(ii/N),label=labels[geom])
     # Add some text for labels, title and custom x-axis tick labels, etc.
-    axs[kk].set_ylabel(f'${v_labels[v]}$ [m/s]')
+    axs[kk].set_ylabel(f'${v_labels[v]}$ [Pa]')
     axs[kk].set_ylim(y_lims[kk])
     axs[kk].set_xticks(x)
     axs[kk].set_xticklabels(runs, rotation=60)
@@ -548,7 +552,7 @@ for kk,v in enumerate(variables):
             y.append(overview[f'{geom}_{run}']['DP_reconstructed'][v])
         rects[ii] = axs[kk].bar(x + shifts[ii], y, w, color=cmap(ii/N),label=labels[geom])
     # Add some text for labels, title and custom x-axis tick labels, etc.
-    axs[kk].set_ylabel(f'${v_labels[v]}$ [m/s]')
+    axs[kk].set_ylabel(f'${v_labels[v]}$ [-]')
     axs[kk].set_ylim(y_lims[kk])
     axs[kk].set_xticks(x)
     axs[kk].set_xticklabels(runs, rotation=60)
