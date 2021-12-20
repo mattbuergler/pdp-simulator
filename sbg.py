@@ -54,6 +54,13 @@ def main():
         help="Run the velocity time series analysis.", default=False)
     parser.add_argument('-p', '--progress', action='store_true',
         help='Show progress bar.')
+    parser.add_argument(
+        "-n",
+        "--nthreads",
+        metavar="NTHREADS",
+        default=1,
+        help="set the number of threads for parallel execution",
+    )
     args = parser.parse_args()
 
     # Create Posix path for OS indepency
@@ -91,7 +98,8 @@ def main():
             probe=config['PROBE'],
             reproducible=config['REPRODUCIBLE'],
             uncertainty=config["UNCERTAINTY_QUANTIFICATION"],
-            progress=args.progress
+            progress=args.progress,
+            nthreads=int(args.nthreads)
             )
 
     # Plot results if necessary

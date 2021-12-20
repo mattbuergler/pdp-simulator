@@ -5,11 +5,15 @@ variables:
   GIT_SUBMODULE_STRATEGY: normal
   DEBIAN_FRONTEND: noninteractive
 
-.run-tests-template: &run-tests-template
+.run-sequential-tests-template: &run-sequential-tests-template
   script:
-    - pipenv run python tests/runtests.py -Cr tests/[0-9]*
+    - pipenv run python tests/runtests.py -n 1 -Cr tests/[0-9]*
 
-test:
+.run-parallel-tests-template: &run-parallel-tests-template
+  script:
+    - pipenv run python tests/runtests.py -n 4 -Cr tests/[0-9]*
+
+test-sequential:
   image: python:3.9.0
   stage: test
   before_script:
@@ -20,4 +24,18 @@ test:
     - pipenv --python $(which python)
     - pipenv install --ignore-pipfile
   dependencies:
-  <<: *run-tests-template
+  <<: *run-sequential-tests-template
+
+
+test-parallel:
+  image: python:3.9.0
+  stage: test
+  before_script:
+    - apt-get update
+    - /usr/local/bin/python -m pip install --upgrade pip
+    - pip install pipenv
+    - PIPENV_VENV_IN_PROJECT=1
+    - pipenv --python $(which python)
+    - pipenv install --ignore-pipfile
+  dependencies:
+  <<: *run-parallel-tests-template
