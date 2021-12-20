@@ -616,12 +616,12 @@ def SBG_signal(
         for ii in range(0,3):
             c_probe[:,ii] = c_probe[:,ii] + vib_amps[ii] * np.sin(2.0 * math.pi * vib_freqs[ii] * t_probe)
 
-    # Write probe location over time
-    writer = H5Writer(path / 'flow_data.h5', 'a')
-    # Create the velocity data set for the entire time series of length n
-    writer.writeDataSet('probe/time', t_probe, 'float64')
-    writer.writeDataSet('probe/location', c_probe, 'float64')
-    writer.close()
+        # Write probe location over time
+        writer = H5Writer(path / 'flow_data.h5', 'a')
+        # Create the velocity data set for the entire time series of length n
+        writer.writeDataSet('probe/time', t_probe, 'float64')
+        writer.writeDataSet('probe/location', c_probe, 'float64')
+        writer.close()
 
     # Initialize signals to zero
     signal = np.zeros((n_probe, n_sensors)).astype('uint8')
