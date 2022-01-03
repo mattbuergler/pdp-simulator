@@ -42,7 +42,7 @@ except ImportError:
 """
 
 # Define global variables
-COEFF_0 = Decimal(0.7)   # Eq. (43) in Shen et al. (2005): low limit constant
+COEFF_0 = Decimal(0.3)   # Eq. (43) in Shen et al. (2005): low limit constant
 V_GAS = Decimal(0.0)
 
 
