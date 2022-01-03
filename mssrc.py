@@ -43,7 +43,7 @@ except ImportError:
 
 # Define global variables
 COEFF_0 = Decimal(0.3)   # Eq. (43) in Shen et al. (2005): low limit constant
-V_GAS = Decimal(0.0)
+V_GAS = Decimal(0.0)     # Eq. (43) in Shen et al. (2005): dummy value, calculated later
 
 
 def inverse_den(x):
@@ -306,13 +306,16 @@ def run_sig_proc_awcc(path, args, config, sensor_ids, t_signal, signal):
     duration = Decimal(t_signal[-1])-Decimal(t_signal[0])
     # get the chord lengths in terms of number of samples
     # chord length [s] = chord length / f_sample
-    print('Determining the air and water chord.\n\n')
+    print('Determining the air and water chord.\n')
     chord_w,chord_a,F1 = chord(signal[:,0],duration, progress=args.progress)
-    print('Determining the windows.\n\n')
+    print('Determining the windows.\n')
     n_windows,start,stop,t = windows(chord_a,chord_w,n_particles,f_sample, progress=args.progress)
 
     results = Parallel(n_jobs=int(args.nthreads),backend='multiprocessing')(delayed(calc_velocity_awwcc)(ii, start, stop, signal, f_sample, delta_x, args) for ii in range(0,n_windows))
     results = pd.concat(results)
+
+    # remove velocities <= 0
+    results['u_inst'] = np.where(results['u_inst'] >= 0, results['u_inst'], results['u_inst']*np.nan)
 
     # plot the figure for evaluation of the filtering
     evaluate_filtering(path, results['SPR_nofilter'], results['Rxymax_nofilter'], results['u_inst_nofilter'])
@@ -408,39 +411,57 @@ def run_interface_pairing(idx_rise_0, id0, max_t_k, signal, signal_ifd, sensor_i
     # Auxillary sensors k
     for k in aux_sensor_ids:
         idk = np.where(sensor_ids == k)[0][0]
-        # Check if sensor is currently in air (1) or water (0) to determine
-        # the search direction in time (backward or forward)
+        # edit mb: ONLY forward search, due to basic assumption of flow direction
+        # # Check if sensor is currently in air (1) or water (0) to determine
+        # # the search direction in time (backward or forward)
+        # phase = signal[idk]
+        # if phase == 0:
+        #     # Sensor k is currently in water phase -> search forward
+        #     # Rising IFD signal
+        #     # Indices of the rising IFD signals for aux. sensor k
+        #     signal_ifd_rise_k = np.where(signal_ifd[:,idk] > 0.0)[0]
+        #     # Ahead of rising IFD signal of sensor 0
+        #     signal_ifd_rise_k = signal_ifd_rise_k[signal_ifd_rise_k > idx_rise_0]
+        #     # Index of the rising IFD signal for aux. sensor k closest to
+        #     # idx_rise_0
+        #     if len(signal_ifd_rise_k) > 0:
+        #         idx_rise_k = min(signal_ifd_rise_k)
+        #     else:
+        #         # no rising IFD signal before t_2h of main sensor, NaN
+        #         idx_rise_k = np.nan
+
+        # elif phase == 1:
+        #     # Sensor k is currently in air phase -> search backward
+        #     # Rising IFD signal
+        #     # Indices of the rising IFD signals for aux. sensor k
+        #     signal_ifd_rise_k = np.where(signal_ifd[:,idk] > 0.0)[0]
+        #     # Behind of rising IFD signal of sensor 0
+        #     signal_ifd_rise_k = signal_ifd_rise_k[signal_ifd_rise_k <= idx_rise_0]
+
+        #     # Index of the rising IFD signal for aux. sensor k closest to
+        #     # idx_rise_0
+        #     if len(signal_ifd_rise_k) > 0:
+        #         idx_rise_k = max(signal_ifd_rise_k)
+        #     else:
+        #         # no rising IFD signal before t_2h of main sensor, NaN
+        #         idx_rise_k = np.nan
+
+        # ONLY DO FORWARD SEARCH
+        # Rising IFD signal
+        # Indices of the rising IFD signals for aux. sensor k
+        signal_ifd_rise_k = np.where(signal_ifd[:,idk] > 0.0)[0]
+        # Ahead of rising IFD signal of sensor 0
+        signal_ifd_rise_k = signal_ifd_rise_k[signal_ifd_rise_k > idx_rise_0]
+        # Index of the rising IFD signal for aux. sensor k closest to
+        # idx_rise_0
+        if len(signal_ifd_rise_k) > 0:
+            idx_rise_k = min(signal_ifd_rise_k)
+        else:
+            # no rising IFD signal before t_2h of main sensor, NaN
+            idx_rise_k = np.nan
+
         phase = signal[idk]
-        if phase == 0:
-            # Sensor k is currently in water phase -> search forward
-            # Rising IFD signal
-            # Indices of the rising IFD signals for aux. sensor k
-            signal_ifd_rise_k = np.where(signal_ifd[:,idk] > 0.0)[0]
-            # Ahead of rising IFD signal of sensor 0
-            signal_ifd_rise_k = signal_ifd_rise_k[signal_ifd_rise_k > idx_rise_0]
-            # Index of the rising IFD signal for aux. sensor k closest to
-            # idx_rise_0
-            if len(signal_ifd_rise_k) > 0:
-                idx_rise_k = min(signal_ifd_rise_k)
-            else:
-                # no rising IFD signal before t_2h of main sensor, NaN
-                idx_rise_k = np.nan
 
-        elif phase == 1:
-            # Sensor k is currently in air phase -> search backward
-            # Rising IFD signal
-            # Indices of the rising IFD signals for aux. sensor k
-            signal_ifd_rise_k = np.where(signal_ifd[:,idk] > 0.0)[0]
-            # Behind of rising IFD signal of sensor 0
-            signal_ifd_rise_k = signal_ifd_rise_k[signal_ifd_rise_k <= idx_rise_0]
-
-            # Index of the rising IFD signal for aux. sensor k closest to
-            # idx_rise_0
-            if len(signal_ifd_rise_k) > 0:
-                idx_rise_k = max(signal_ifd_rise_k)
-            else:
-                # no rising IFD signal before t_2h of main sensor, NaN
-                idx_rise_k = np.nan
         # Search for t_2h+1 of sensor k
         if not np.isnan(idx_rise_k):
             # Indices of the falling IFD signals for main sensor k
@@ -448,7 +469,11 @@ def run_interface_pairing(idx_rise_0, id0, max_t_k, signal, signal_ifd, sensor_i
             signal_ifd_fall_k = signal_ifd_fall_k[signal_ifd_fall_k > idx_rise_k]
             # Index of the falling IFD signal for main sensor k
             if len(signal_ifd_fall_k) > 0:
-                idx_fall_k = min(signal_ifd_fall_k)
+                if phase == 0:
+                    idx_fall_k = min(signal_ifd_fall_k)
+                elif phase == 1:
+                    if len(signal_ifd_fall_k) > 1:
+                        idx_fall_k = signal_ifd_fall_k[1]
             else:
                 idx_fall_k = np.nan
         else:
@@ -901,9 +926,7 @@ def main():
         help='Show progress bar.')
     args = parser.parse_args()
 
-    # Eq. (43) in Shen et al. (2005): estimated gas velocity
     global V_GAS
-    V_GAS = Decimal(args.velocity)
 
     # Create Posix path for OS indepency
     path = pathlib.Path(args.path)
@@ -935,7 +958,6 @@ def main():
     if (n_sensors == 2):
         if (ra_type == "dual_tip_AWCC"):
             # AWCC for 2 tips
-            # number of particles per windows
             bubbles_complete = run_sig_proc_awcc(path, args,
                                                 config,
                                                 sensor_ids,
@@ -946,6 +968,29 @@ def main():
             print(f"\nDetected {len(bubbles_complete)} averaging windows.")
         elif (ra_type == "dual_tip_ED"):
             # Event-detection (ED) for 2 tips
+            print('Running AWCC to get initial velocity estimate for iterface pairing.\n')
+            # run AWCC for two tips to get first estimate of mean velocity
+            particles = run_sig_proc_awcc(path, args,
+                                            config,
+                                            sensor_ids,
+                                            t_signal,
+                                            signal[:,0:2])
+
+            velocity_estimate = np.empty((len(particles),3))
+            for ii,particle in enumerate(particles):
+                velocity_estimate[ii,:] = np.array([particle['velocity'][0], \
+                                                    particle['velocity'][1], \
+                                                    particle['velocity'][2]
+                                                    ])
+            # run ROC for velocity estimate
+            while sum(sum(np.isnan(velocity_estimate))) < sum(sum(np.isnan(roc(velocity_estimate)))):
+                velocity_estimate = roc(velocity_estimate)
+            # get mean velocity estimate
+            mean_velocity_estimate = np.nanmean(velocity_estimate, axis=0)
+            # Eq. (43) in Shen et al. (2005): estimated gas velocity
+            V_GAS = Decimal(mean_velocity_estimate[0])
+            print(f'Initial velocity estimate from AWCC: {V_GAS} m/s')
+
             # get the distance vector between leading and trailing tips
             aux_sensor_ids, max_t_k,S_0k_mag,S_0k,cos_eta_0k = get_sensor_distance_vectors(config)
             sensors = config['PROBE']['sensors']
@@ -971,6 +1016,28 @@ def main():
 
     elif (n_sensors >= 4):
         # Reconstruction algorithm for 4 or more sensors
+        print('Running AWCC to get initial velocity estimate for iterface pairing.\n')
+        # run AWCC for two tips to get first estimate of mean velocity
+        particles = run_sig_proc_awcc(path, args,
+                                        config,
+                                        sensor_ids,
+                                        t_signal,
+                                        signal[:,0:2])
+
+        velocity_estimate = np.empty((len(particles),3))
+        for ii,particle in enumerate(particles):
+            velocity_estimate[ii,:] = np.array([particle['velocity'][0], \
+                                                particle['velocity'][1], \
+                                                particle['velocity'][2]
+                                                ])
+        # run ROC for velocity estimate
+        while sum(sum(np.isnan(velocity_estimate))) < sum(sum(np.isnan(roc(velocity_estimate)))):
+            velocity_estimate = roc(velocity_estimate)
+        # get mean velocity estimate
+        mean_velocity_estimate = np.nanmean(velocity_estimate, axis=0)
+        # Eq. (43) in Shen et al. (2005): estimated gas velocity
+        V_GAS = Decimal(mean_velocity_estimate[0])
+        print(f'Initial velocity estimate from AWCC: {V_GAS:.2f} m/s')
 
         # get the distance vector between leading and trailing tips
         aux_sensor_ids, max_t_k,S_0k_mag,S_0k,cos_eta_0k = get_sensor_distance_vectors(config)
@@ -1080,7 +1147,7 @@ def main():
     ds_d.attrs['labels'] = ['D_h_2h', 'D_h_2hp1']
     # Create the IAC and void_fraction datasets
     writer.writeDataSet('IAC', np.array([IAC],dtype='float64'), 'float64')
-    writer.writeDataSet('voidFraction', np.array([np.average(signal[:-1,0],weights=np.diff(t_signal.astype('float64')))]), 'float64')
+    writer.writeDataSet('voidFraction', np.array([np.mean(signal[:,0])]), 'float64')
     writer.close()
     time2 = time.time()
     print(f'Successfully run the reconstruction algorithm')
