@@ -50,7 +50,8 @@
         ]
     },
     "RECONSTRUCTION": {
-        "type": "Tian_et_al_2015"
+        "type": "Tian_et_al_2015",
+        "n_particles": 10
     },
     "REPRODUCIBLE": "yes"
 }
