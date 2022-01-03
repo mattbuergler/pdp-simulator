@@ -42,7 +42,7 @@ except ImportError:
 """
 
 # Define global variables
-COEFF_0 = Decimal(0.3)   # Eq. (43) in Shen et al. (2005): low limit constant
+COEFF_0 = Decimal(0.7)   # Eq. (43) in Shen et al. (2005): low limit constant
 V_GAS = Decimal(0.0)
 
 
@@ -398,9 +398,12 @@ def run_interface_pairing(idx_rise_0, id0, max_t_k, signal, signal_ifd, sensor_i
     # Indices of the falling IFD signals for main sensor 0
     signal_ifd_fall_0 = np.where(signal_ifd[:,id0] < 0.0)[0]
     # Index of the falling IFD signal for main sensor 0
-    idx_fall_0 = min(signal_ifd_fall_0[signal_ifd_fall_0 > idx_rise_0])
-    # Write t_b+1 of sensor 0
-    ifd_times['t_2h+1'][0] = t_signal_ifd_list[idx_fall_0]
+    if len(signal_ifd_fall_0[signal_ifd_fall_0 > idx_rise_0]) > 0:
+        idx_fall_0 = min(signal_ifd_fall_0[signal_ifd_fall_0 > idx_rise_0])
+        # Write t_b+1 of sensor 0
+        ifd_times['t_2h+1'][0] = t_signal_ifd_list[idx_fall_0]
+    else:
+        ifd_times['t_2h+1'][0] = np.nan
 
     # Auxillary sensors k
     for k in aux_sensor_ids:
@@ -444,7 +447,10 @@ def run_interface_pairing(idx_rise_0, id0, max_t_k, signal, signal_ifd, sensor_i
             signal_ifd_fall_k = np.where(signal_ifd[:,idk] < 0.0)[0]
             signal_ifd_fall_k = signal_ifd_fall_k[signal_ifd_fall_k > idx_rise_k]
             # Index of the falling IFD signal for main sensor k
-            idx_fall_k = min(signal_ifd_fall_k)
+            if len(signal_ifd_fall_k) > 0:
+                idx_fall_k = min(signal_ifd_fall_k)
+            else:
+                idx_fall_k = np.nan
         else:
             idx_fall_k = np.nan
 
@@ -460,7 +466,6 @@ def run_interface_pairing(idx_rise_0, id0, max_t_k, signal, signal_ifd, sensor_i
             ifd_times['t_2h+1'][k] = t_signal_ifd_list[idx_fall_k]
         else:
             ifd_times['t_2h+1'][k] = np.nan
-
     # Check for each sensor if IFD times of front (2h) and rear (2h+1)
     # interface fall within the range for the lag between signal of sensors 0
     # and signal of sensor k from Eq. (42) in Shen et al. (2005)
