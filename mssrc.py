@@ -270,6 +270,26 @@ def roc(u):
             u_filt[ii,:] = u[ii,:]
     return u_filt
 
+def roc_mod(u, u_med):
+    """
+        Robust outlier cutoff based on the maximum absolute deviation and the 
+        universal threshold.
+
+        u:                  the velocity time series
+        u_med:              expected value
+    """
+
+    # ust estimated through MED
+    u_std = 0.5*u_med
+    N = len(u)
+    u_filt = np.zeros((N,3))
+    for ii in range(0,N):
+        if (abs((u[ii,0]-u_med)/u_std) > 1.0):
+            u_filt[ii,:] = np.nan
+        else:
+            u_filt[ii,:] = u[ii,:]
+    return u_filt
+
 def calc_velocity_awwcc(ii, start, stop, signal, f_sample, delta_x, args):
     n_lags = int(stop[ii] - start[ii])              # lags correspond to time windows
     S1 = signal[start[ii]:stop[ii],0]               # raw signals leading tip
@@ -910,8 +930,6 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('path', type=str,
         help="The path to the scenario directory.")
-    parser.add_argument('-vel', '--velocity', default=1,
-        help='A rough estimate for the mean velocity.')
     parser.add_argument('-roc', '--ROC', default='True',
         help='Perform robust outlier cutoff (ROC) based on the maximum' + 
                 'absolute deviation and the universal threshold (True/False).')
@@ -1070,7 +1088,7 @@ def main():
         print(f"\nDetected {len(bubbles)} bubble signals.")
         print(f"\nDetected {len(bubbles_complete)} complete bubble signals.")
 
-    print('\nSaving results....\n')
+    print('\nProcessing results....\n')
     # Generate a reconstructed velocity time-series from individual
     # Initialize bubble velocities, weighted mean velocity
     velocity_reconst = np.empty((len(bubbles_complete),3))
@@ -1091,11 +1109,15 @@ def main():
     # ROC filtering, R12 and SPR filtering implemented in previous loop
     if args.ROC == 'True':
         print('Performing robust outlier cutoff.\n')
-        while sum(sum(np.isnan(velocity_reconst))) < sum(sum(np.isnan(roc(velocity_reconst)))):
-            velocity_reconst = roc(velocity_reconst)
-
-        spikesloop=(sum(np.isnan(velocity_reconst)[:,0])/len(velocity_reconst))*100
-        print(f'Discarded data: {spikesloop:.2f} %\n')
+        if ((n_sensors >= 4) | (ra_type == "dual_tip_ED")):
+            velocity_reconst = roc_mod(velocity_reconst, float(V_GAS))
+            while sum(sum(np.isnan(velocity_reconst))) < sum(sum(np.isnan(roc(velocity_reconst)))):
+                velocity_reconst = roc(velocity_reconst)
+        else:
+            while sum(sum(np.isnan(velocity_reconst))) < sum(sum(np.isnan(roc(velocity_reconst)))):
+                velocity_reconst = roc(velocity_reconst)
+        discarded=(sum(np.isnan(velocity_reconst)[:,0])/len(velocity_reconst))*100
+        print(f'Discarded data: {discarded:.2f} %\n')
 
     weighted_mean_velocity_reconst[0] = np.nansum(velocity_reconst[:,0] \
                                     * (time_reconst[:,1]-time_reconst[:,0]),axis=0) \
@@ -1124,6 +1146,7 @@ def main():
             mean_reynolds_stress[1,1], \
             mean_reynolds_stress[2,2], \
             ])) / np.sqrt(mean_velocity_reconst.dot(mean_velocity_reconst))
+    print('\nSaving results....\n')
     # Create the H5-file writer
     writer = H5Writer(path / 'reconstructed.h5', 'w')
     # Create the velocity data set
