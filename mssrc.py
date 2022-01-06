@@ -50,10 +50,13 @@ def inverse_den(x):
     """
     Calculate inverse of a number.
     """
-    if abs(x) < Decimal(1.e-24):
-        return Decimal(0.0)
+    if x.is_nan():
+        return Decimal('nan')
     else:
-        return Decimal(1.0) / x
+        if abs(x) < Decimal(1.e-24):
+            return Decimal(0.0)
+        else:
+            return Decimal(1.0) / x
 
 def calc_det(mat):
     """
@@ -494,6 +497,8 @@ def run_interface_pairing(idx_rise_0, id0, max_t_k, signal, signal_ifd, sensor_i
                 elif phase == 1:
                     if len(signal_ifd_fall_k) > 1:
                         idx_fall_k = signal_ifd_fall_k[1]
+                    else:
+                        idx_fall_k = np.nan
             else:
                 idx_fall_k = np.nan
         else:
@@ -930,7 +935,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('path', type=str,
         help="The path to the scenario directory.")
-    parser.add_argument('-roc', '--ROC', default='True',
+    parser.add_argument('-roc', '--ROC', default='False',
         help='Perform robust outlier cutoff (ROC) based on the maximum' + 
                 'absolute deviation and the universal threshold (True/False).')
     parser.add_argument(
@@ -1121,13 +1126,13 @@ def main():
 
     weighted_mean_velocity_reconst[0] = np.nansum(velocity_reconst[:,0] \
                                     * (time_reconst[:,1]-time_reconst[:,0]),axis=0) \
-                                    / np.nansum(time_reconst[:,1]-time_reconst[:,0],axis=0)
+                                    / np.nansum((time_reconst[:,1]-time_reconst[:,0])*(velocity_reconst[:,0]/velocity_reconst[:,0]),axis=0)
     weighted_mean_velocity_reconst[1] = np.nansum(velocity_reconst[:,1] \
                                     * (time_reconst[:,1]-time_reconst[:,0]),axis=0) \
-                                    / np.nansum(time_reconst[:,1]-time_reconst[:,0],axis=0)
+                                    / np.nansum((time_reconst[:,1]-time_reconst[:,0])*(velocity_reconst[:,1]/velocity_reconst[:,1]),axis=0)
     weighted_mean_velocity_reconst[2] = np.nansum(velocity_reconst[:,2] \
                                     * (time_reconst[:,1]-time_reconst[:,0]),axis=0) \
-                                    / np.nansum(time_reconst[:,1]-time_reconst[:,0],axis=0)
+                                    / np.nansum((time_reconst[:,1]-time_reconst[:,0])*(velocity_reconst[:,2]/velocity_reconst[:,2]),axis=0)
     # Calculate mean velocity
     mean_velocity_reconst = np.nanmean(velocity_reconst, axis=0)
     # Initialize the reynolds stress tensors time series

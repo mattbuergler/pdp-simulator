@@ -42,6 +42,11 @@ class Runner:
     def getNumRuns(self):
         return len(self.runs)
 
+    def setupPostProcess(self, config):
+        self.filter = config['filter']
+        self.filter_threshold = config['filter_threshold']
+        self.roc_pp = config['roc']
+
     def displayNumRuns(self):
         print((" found %d run(s)") % (len(self.runs)))
 
@@ -67,6 +72,20 @@ class Runner:
 
         return errors
 
+    def runPostProcessing(self):
+        """
+        postprocess runs
+        """
+        errors = 0
+        self.timings = []
+        for runDirectory in self.runs:
+            error = 0
+
+            t, error = self.postProcess(runDirectory)
+            errors += error
+            self.timings.append(t)
+
+        return errors
 
     def setup(self, directory: pathlib.Path):
         """
@@ -142,6 +161,29 @@ class Runner:
             str(pathlib.Path(self.bin) / "evaluate.py"),
             "."
         ]
+        return self.runCommon(cmd, runDirectory, "a")
+
+    def postProcess(self, runDirectory: pathlib.Path):
+        """
+        post-process velocity values of given simulation in given directory
+        """
+        PRINTTITLE(" running post-processing in %s " % str(runDirectory), "-")
+        # get the filename of the runfile
+        reconst_file = runDirectory / "run" / "reconstructed.h5"
+        # check for runfile
+        if not reconst_file.exists():
+            PRINTERRORANDEXIT("runfile <" + str(reconst_file) + "> does not exists")
+        # create simulation call
+        cmd = [
+            "python",
+            str(pathlib.Path(self.bin) / "postprocess.py"),
+        ]
+        if self.filter:
+            cmd.append('--filter')
+            cmd.append(str(self.filter_threshold))
+        cmd.append('--ROC')
+        cmd.append(str(self.roc_pp))
+        cmd.append(".")
         return self.runCommon(cmd, runDirectory, "a")
 
     def runTSA(self, runDirectory: pathlib.Path):

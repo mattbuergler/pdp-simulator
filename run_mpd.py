@@ -67,9 +67,29 @@ if __name__ != "main":
         default=str(pathlib.Path(__file__).resolve().parent),
         help="diretories that contain the functions (e.g. sbg.py, mssrc.py, etc.)",
     )
+    parser.add_argument(
+        "-r", "--run", action="store_true", help="run the multi-phase-detection simulation"
+    )
+    parser.add_argument(
+        "-p",
+        "--postprocess",
+        metavar="OPTION",
+        default=None,
+        help="the following options are available:\n"
+        + "filter     - filtering of velocity values based on a the mean and deviation\n"
+        + "roc        - perform robust outlier detection\n"
+        + "all        - perform roc and filtering\n"
+    )
+    parser.add_argument(
+        "-ft",
+        "--filter_threshold",
+        metavar="THRESHOLD",
+        default=50,
+        help="the maximum deviation threshold from the mean value (in percent) for filtering (Default: 50)"
+    )
     parser.add_argument('-tsa', '--velocity_tsa', action='store_true',
         help="Vizualize the results.", default=False)
-    parser.add_argument('-roc', '--ROC', default=True,
+    parser.add_argument('-roc', '--ROC', default=True, metavar='BOOL',
         help='Perform robust outlier cutoff (ROC) based on the maximum' +
                 'absolute deviation and the universal threshold (True/False).')
     args = vars(parser.parse_args())
@@ -89,8 +109,22 @@ if __name__ != "main":
         runner.findRuns(pathlib.Path(target_dir))
 
     runner.displayNumRuns()
-    errors = runner.run()
+    if args["run"]:
+        error = runner.run()
+        errors += error
 
+    if args['postprocess']:
+        config = {}
+        config['filter'] = False
+        config['roc'] = False
+        if args['postprocess'] in ['filter', 'all']:
+            config['filter'] = True
+            config['filter_threshold'] = args['filter_threshold']
+        if args['postprocess'] in ['roc', 'all']:
+            config['roc'] = True
+        runner.setupPostProcess(config)
+        error = runner.runPostProcessing()
+        errors += error
     end_time = time.time()
     PRINTTITLE(
         "mpd.py was running for %d seconds" % int(end_time - start_time), "-"
