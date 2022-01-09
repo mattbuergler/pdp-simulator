@@ -921,6 +921,81 @@ def multi_tip_signal_processing(ii, bubble_props, S_0k, S_0k_mag, cos_eta_0k, nb
     else:
         return ['nan', 'nan']
 
+def get_awcc_properties(path, args, config, sensor_ids, t_signal, signal):
+    # get the distance vector between leading and trailing tips
+    aux_sensor_ids = []
+    S_k = {}
+    S_0k = {}
+    S_0k_mag = {}
+    sensors = config['PROBE']['sensors']
+    for sensor in sensors:
+        # Get the sensor ID
+        s_id = sensor['id']
+        # Get relative location vectors
+        S_k[s_id] = np.asarray(sensor['relative_location'],dtype='str')
+    for sensor in sensors:
+        # Get the sensor ID
+        s_id = sensor['id']
+        if s_id != 0:
+            aux_sensor_ids.append(s_id)
+            # Set the distance vectors
+            S_0k[s_id] = np.array([Decimal(S_k[s_id][0])-Decimal(S_k[0][0]),
+                                   Decimal(S_k[s_id][1])-Decimal(S_k[0][1]),
+                                   Decimal(S_k[s_id][2])-Decimal(S_k[0][2])],
+                                  dtype='str')
+            # Calculate magnitudes
+            S_0k_mag[s_id] = (Decimal(S_0k[s_id][0]) * Decimal(S_0k[s_id][0])
+                            + Decimal(S_0k[s_id][1]) * Decimal(S_0k[s_id][1])
+                            + Decimal(S_0k[s_id][2]) * Decimal(S_0k[s_id][2])).sqrt()
+
+    # get ID of sensor with smallest distance to leading sensor for AWCC
+    min_dist_sensor = min(S_0k_mag, key=S_0k_mag.get)
+
+    # run AWCC for two tips to get first estimate of mean velocity
+    particles = run_sig_proc_awcc(path, args,
+                                    config,
+                                    sensor_ids,
+                                    t_signal,
+                                    signal[:,[0, min_dist_sensor]])
+
+    # convert to arrays
+    velocity_awcc = np.empty((len(particles),3))
+    time_awcc = np.empty((len(particles),2))
+    for ii,particle in enumerate(particles):
+        velocity_awcc[ii,:] = np.array([particle['velocity'][0], \
+                                            particle['velocity'][1], \
+                                            particle['velocity'][2] \
+                                            ])
+        time_awcc[ii,0] = np.nanmin(particle['ifd_times'].to_numpy().astype('float64'))
+        time_awcc[ii,1] = np.nanmax(particle['ifd_times'].to_numpy().astype('float64'))
+    # run ROC for velocity estimate
+    while sum(sum(np.isnan(velocity_awcc))) < sum(sum(np.isnan(roc(velocity_awcc)))):
+        velocity_awcc = roc(velocity_awcc)
+    # get mean velocity estimate
+    weighted_mean_velocity_awcc = np.empty(3)
+    weighted_mean_velocity_awcc[0] = np.nansum(velocity_awcc[:,0] \
+                                * (time_awcc[:,1]-time_awcc[:,0]),axis=0) \
+                                / np.nansum((time_awcc[:,1]-time_awcc[:,0])*(velocity_awcc[:,0]/velocity_awcc[:,0]),axis=0)
+    weighted_mean_velocity_awcc[1] = np.nansum(velocity_awcc[:,1] \
+                                * (time_awcc[:,1]-time_awcc[:,0]),axis=0) \
+                                / np.nansum((time_awcc[:,1]-time_awcc[:,0])*(velocity_awcc[:,1]/velocity_awcc[:,1]),axis=0)
+    weighted_mean_velocity_awcc[2] = np.nansum(velocity_awcc[:,2] \
+                                * (time_awcc[:,1]-time_awcc[:,0]),axis=0) \
+                                / np.nansum((time_awcc[:,1]-time_awcc[:,0])*(velocity_awcc[:,2]/velocity_awcc[:,2]),axis=0)        # Eq. (43) in Shen et al. (2005): estimated gas velocity
+    # Initialize the reynolds stress tensors time series
+    reynolds_stress_awcc = np.empty((len(velocity_awcc),3,3))
+    for ii in range(0,len(velocity_awcc)):
+        # Calculate velocity fluctuations
+        velocity_fluct_reconst_awcc = velocity_awcc[ii,:] - weighted_mean_velocity_awcc
+        # Reynolds stresses as outer product of fluctuations
+        reynolds_stress_awcc[ii,:,:] = np.outer(velocity_fluct_reconst_awcc, \
+                                    velocity_fluct_reconst_awcc)
+    # Calculate mean Reynolds stresses
+    mean_reynolds_stress_awcc = np.nanmean(reynolds_stress_awcc,axis=0)
+
+    return weighted_mean_velocity_awcc, mean_reynolds_stress_awcc
+
+
 def main():
     """
         Main function of the Stochastic Bubble Generator (SBG)
@@ -1040,31 +1115,20 @@ def main():
     elif (n_sensors >= 4):
         # Reconstruction algorithm for 4 or more sensors
         print('Running AWCC to get initial velocity estimate for iterface pairing.\n')
-        # run AWCC for two tips to get first estimate of mean velocity
-        particles = run_sig_proc_awcc(path, args,
-                                        config,
-                                        sensor_ids,
-                                        t_signal,
-                                        signal[:,0:2])
 
-        velocity_estimate = np.empty((len(particles),3))
-        for ii,particle in enumerate(particles):
-            velocity_estimate[ii,:] = np.array([particle['velocity'][0], \
-                                                particle['velocity'][1], \
-                                                particle['velocity'][2]
-                                                ])
-        # run ROC for velocity estimate
-        while sum(sum(np.isnan(velocity_estimate))) < sum(sum(np.isnan(roc(velocity_estimate)))):
-            velocity_estimate = roc(velocity_estimate)
-        # get mean velocity estimate
-        mean_velocity_estimate = np.nanmean(velocity_estimate, axis=0)
-        # Eq. (43) in Shen et al. (2005): estimated gas velocity
-        V_GAS = Decimal(mean_velocity_estimate[0])
-        print(f'Initial velocity estimate from AWCC: {V_GAS:.2f} m/s')
+        weighted_mean_velocity_awcc,mean_reynolds_stress_awcc = get_awcc_properties(path,
+                                                                args,
+                                                                config,
+                                                                sensor_ids,
+                                                                t_signal,
+                                                                signal)
+
+        V_GAS = Decimal(weighted_mean_velocity_awcc[0])
+
+        print(f'Mean velocity from AWCC: {V_GAS:.2f} m/s')
 
         # get the distance vector between leading and trailing tips
         aux_sensor_ids, max_t_k,S_0k_mag,S_0k,cos_eta_0k = get_sensor_distance_vectors(config)
-
         # run event detection algorithm
         bubbles = run_event_detection(args,
                                     aux_sensor_ids,
@@ -1116,11 +1180,8 @@ def main():
         print('Performing robust outlier cutoff.\n')
         if ((n_sensors >= 4) | (ra_type == "dual_tip_ED")):
             velocity_reconst = roc_mod(velocity_reconst, float(V_GAS))
-            while sum(sum(np.isnan(velocity_reconst))) < sum(sum(np.isnan(roc(velocity_reconst)))):
-                velocity_reconst = roc(velocity_reconst)
-        else:
-            while sum(sum(np.isnan(velocity_reconst))) < sum(sum(np.isnan(roc(velocity_reconst)))):
-                velocity_reconst = roc(velocity_reconst)
+        while sum(sum(np.isnan(velocity_reconst))) < sum(sum(np.isnan(roc(velocity_reconst)))):
+            velocity_reconst = roc(velocity_reconst)
         discarded=(sum(np.isnan(velocity_reconst)[:,0])/len(velocity_reconst))*100
         print(f'Discarded data: {discarded:.2f} %\n')
 
@@ -1139,7 +1200,7 @@ def main():
     reynolds_stress = np.empty((len(velocity_reconst),3,3))
     for ii in range(0,len(velocity_reconst)):
         # Calculate velocity fluctuations
-        velocity_fluct_reconst = velocity_reconst[ii,:] - mean_velocity_reconst
+        velocity_fluct_reconst = velocity_reconst[ii,:] - weighted_mean_velocity_reconst
         # Reynolds stresses as outer product of fluctuations
         reynolds_stress[ii,:,:] = np.outer(velocity_fluct_reconst, \
                                     velocity_fluct_reconst)
@@ -1150,7 +1211,7 @@ def main():
             mean_reynolds_stress[0,0], \
             mean_reynolds_stress[1,1], \
             mean_reynolds_stress[2,2], \
-            ])) / np.sqrt(mean_velocity_reconst.dot(mean_velocity_reconst))
+            ])) / np.sqrt(weighted_mean_velocity_reconst.dot(weighted_mean_velocity_reconst))
     print('\nSaving results....\n')
     # Create the H5-file writer
     writer = H5Writer(path / 'reconstructed.h5', 'w')
@@ -1165,6 +1226,11 @@ def main():
         mean_reynolds_stress, 'float64')
     writer.writeDataSet('bubbles/turbulent_intensity', \
         turbulent_intensity, 'float64')
+    if ((n_sensors >= 4) | (ra_type == "dual_tip_ED")):
+        writer.writeDataSet('bubbles/mean_velocity_awcc', \
+            weighted_mean_velocity_awcc, 'float64')
+        writer.writeDataSet('bubbles/reynold_stresses_awcc', \
+        mean_reynolds_stress_awcc, 'float64')
     ds_vel = writer.getDataSet('bubbles/velocity')
     # Add the attributes
     ds_vel.attrs['labels'] = ['Ux','Uy','Uz']
