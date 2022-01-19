@@ -82,10 +82,12 @@ if __name__ != "main":
     )
     parser.add_argument(
         "-ft",
-        "--filter_threshold",
-        metavar="THRESHOLD",
-        default=50,
-        help="the maximum deviation threshold from the mean value (in percent) for filtering (Default: 50)"
+        "--filter-type",
+        metavar="OPTION",
+        default="max",
+        help="Filtering of velocity time series. The following options are available:\n"
+        + "awcc       - based on mean and RMS velocity from AWCC\n"
+        + "max        - based on mean from awcc and standard deviation of velocity time series values larger than the mean.\n"
     )
     parser.add_argument('-tsa', '--velocity_tsa', action='store_true',
         help="Vizualize the results.", default=False)
@@ -100,7 +102,6 @@ if __name__ != "main":
     config['ROC'] = args["ROC"]
     config['bin'] = args["bin"]
     config['nthreads'] = str(args["nthreads"])
-
     runner = Runner(config)
     # and the runs
     for target_dir in args["runs"]:
@@ -119,7 +120,7 @@ if __name__ != "main":
         config['roc'] = False
         if args['postprocess'] in ['filter', 'all']:
             config['filter'] = True
-            config['filter_threshold'] = args['filter_threshold']
+            config['filter_type'] = args['filter_type']
         if args['postprocess'] in ['roc', 'all']:
             config['roc'] = True
         runner.setupPostProcess(config)

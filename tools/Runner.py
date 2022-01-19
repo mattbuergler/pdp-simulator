@@ -44,7 +44,7 @@ class Runner:
 
     def setupPostProcess(self, config):
         self.filter = config['filter']
-        self.filter_threshold = config['filter_threshold']
+        self.filter_type = config['filter_type']
         self.roc_pp = config['roc']
 
     def displayNumRuns(self):
@@ -179,8 +179,8 @@ class Runner:
             str(pathlib.Path(self.bin) / "postprocess.py"),
         ]
         if self.filter:
-            cmd.append('--filter')
-            cmd.append(str(self.filter_threshold))
+            cmd.append('--filter-type')
+            cmd.append(str(self.filter_type))
         cmd.append('--ROC')
         cmd.append(str(self.roc_pp))
         cmd.append(".")

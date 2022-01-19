@@ -50,21 +50,126 @@ def roc(u):
 
     # robust estimation of the variance:
     # expected value estimated through MED
-    u_med = np.nanmedian(u,axis=0)
+    u_med = np.nanmedian(u[0,:],axis=0)
     # ust estimated through MED
-    u_std = k * np.nanmedian(abs(u - u_med),axis=0)
+    u_std = k * np.nanmedian(abs(u[0,:] - u_med),axis=0)
     # universal threshold:
     N = len(u)
     lambda_u = math.sqrt(2*math.log(N))
     ku_std = lambda_u*u_std
-    ku_std[ku_std == 0.0] = np.nan
-
-    u_filt = u
+    u_filt = np.zeros((N,3))
     for ii in range(0,N):
-        u_filt[ii,(abs((u[ii,:]-u_med)/ku_std) > 1.0)] = np.nan
+        if (abs((u[ii,0]-u_med)/ku_std) > 1.0):
+            u_filt[ii,:] = np.nan
+        else:
+            u_filt[ii,:] = u[ii,:]
+    return u_filt
+
+def roc_mod(u, u_mean, u_rms):
+    """
+        Robust outlier cutoff based on the maximum absolute deviation and the 
+        universal threshold.
+
+        u:                  the velocity time series
+        u_mean:             given mean value
+        u_rms:              given root mean square deviation
+
+    """
+
+    k = 1.483; # based on a normal distro, see Rousseeuw and Croux (1993)
+
+    u_std = k * u_rms
+    # universal threshold:
+    N = len(u)
+    lambda_u = math.sqrt(2*math.log(N))
+    ku_std = lambda_u*u_std
+    if ku_std == 0.0:
+        ku_std = np.nan
+    print(ku_std)
+    u_filt = np.zeros((N,3))
+    for ii in range(0,N):
+        if (abs((u[ii,0]-u_mean)/ku_std) > 1.0):
+            u_filt[ii,:] = np.nan
+        else:
+            u_filt[ii,:] = u[ii,:]
 
     return u_filt
 
+def filter_max_roc(u, u_mean):
+    """
+        Robust outlier cutoff based on the maximum absolute deviation and the 
+        universal threshold.
+
+        u:                  the velocity time series
+    """
+
+    k = 1.483; # based on a normal distro, see Rousseeuw and Croux (1993)
+
+    # robust estimation of the variance:
+    # expected value estimated through MED
+    u_med = u_mean
+    # ust estimated through MED
+    u_std = k * np.nanmedian(abs(u[u[:,0] > u_mean][:,0] - u_med),axis=0)
+    # universal threshold:
+    N = len(u)
+    lambda_u = math.sqrt(2*math.log(N))
+    ku_std = lambda_u*u_std
+    print(u_std)
+    print(ku_std)
+    u_filt = np.zeros((N,3))
+    for ii in range(0,N):
+        if (abs((u[ii,0]-u_med)/ku_std) > 1.0):
+            u_filt[ii,:] = np.nan
+        else:
+            u_filt[ii,:] = u[ii,:]
+    return u_filt
+
+def filter_max(u, u_mean):
+    """
+        Robust outlier cutoff based on the maximum absolute deviation and the 
+        universal threshold.
+
+        u:                  the velocity time series
+        u_mean:             given mean value
+        u_rms:              given root mean square deviation
+
+    """
+    u_pre_filter = u[u[:,0] < np.nanpercentile(u[:,0],99)]
+    u_std = np.sqrt(np.sum(np.square(u_pre_filter[u_pre_filter[:,0] > u_mean][:,0] - u_mean))/len(u_pre_filter[u_pre_filter[:,0] > u_mean][:,0]))
+    # universal threshold:
+    N = len(u)
+
+    u_filt = np.zeros((N,3))
+    for ii in range(0,N):
+        if (abs((u[ii,0]-u_mean)/u_std) > 1.0):
+            u_filt[ii,:] = np.nan
+        else:
+            u_filt[ii,:] = u[ii,:]
+
+    return u_filt
+
+def filter_max_med(u, u_mean):
+    """
+        Robust outlier cutoff based on the maximum absolute deviation and the 
+        universal threshold.
+
+        u:                  the velocity time series
+        u_mean:             given mean value
+        u_rms:              given root mean square deviation
+
+    """
+    u_std = np.nanmedian(u[u[:,0] > u_mean][:,0] - u_mean,axis=0)
+    # universal threshold:
+    N = len(u)
+
+    u_filt = np.zeros((N,3))
+    for ii in range(0,N):
+        if (abs((u[ii,0]-u_mean)/u_std) > 1.0):
+            u_filt[ii,:] = np.nan
+        else:
+            u_filt[ii,:] = u[ii,:]
+
+    return u_filt
 
 def filter(u, u_med, max_dev):
     """
@@ -103,10 +208,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('path', type=str,
         help="The path to the scenario directory.")
-    parser.add_argument('-f', '--filter', metavar="FILTER", default='None',
-        help='Perform filtering of velocity values based on a the mean ' + 
-                'velocity obtained from AWCC and a maximum deviation ' + 
-                'from the mean value in %.')
+    parser.add_argument('-ft', '--filter-type', metavar="TYPE", default='None',
+        help="the following options are available:\n"
+        + "awcc       - based on mean and RMS velocity from AWCC\n"
+        + "max        - based on mean from awcc and standard deviation of velocity time series values larger than the mean.\n"
+        + "max_med    - based on mean from awcc and median deviation of velocity time series values larger than the mean.\n"
+        + "max_roc    - ROC based on mean from awcc and median deviation of velocity time series values larger than the mean.\n")
     parser.add_argument('-roc', '--ROC', default='False',
         help='Perform robust outlier cutoff (ROC) based on the maximum' + 
                 'absolute deviation and the universal threshold (True/False).')
@@ -125,20 +232,31 @@ def main():
     velocity_reconst = writer.getDataSet('bubbles/velocity')[:]
     # Read the bubbles diameters
     bubble_diam_reconst = writer.getDataSet('bubbles/diameters')[:]
-
-    mean_vel_awcc = 0.0
-    # get the mean velocity from AWCC
-    with open(path / 'run.output') as f:
-        output = f.read()
-        mean_vel_awcc = float(output.split('Initial velocity estimate from AWCC: ')[1].split()[0])
+    # Read the mean velocity from awcc
+    mean_vel_awcc = writer.getDataSet('bubbles/mean_velocity_awcc')[:][0]
+    # calculate u_rms from awcc
+    u_rms_awcc = math.sqrt(writer.getDataSet('bubbles/reynold_stresses_awcc')[:][0,0])
 
     # Do the actual post-processing here
-    if not args.filter == 'None':
-        print(f'\nRun filtering based on mean velocity of {mean_vel_awcc} m/s and deviation of {args.filter}%\n')
-        # data filtering
-        velocity_reconst = filter(velocity_reconst, mean_vel_awcc, float(args.filter))
-        discarded=(sum(sum(np.isnan(velocity_reconst)))/(len(velocity_reconst)*3))*100
-        print(f'Discarded data: {discarded:.2f} %\n')
+    u_rms_string = r'$u_{rms}$'
+    # data filtering
+    if args.filter_type == 'awcc':
+        print(f"\nRun filtering based on mean velocity of {mean_vel_awcc} m/s and {u_rms_string} of {u_rms_awcc}%\n")
+        velocity_reconst = roc_mod(velocity_reconst, mean_vel_awcc, u_rms_awcc)
+    elif args.filter_type == 'max':
+        print(f"\nRun filtering 'filter_max' based on mean velocity of {mean_vel_awcc} m/s\n")
+        velocity_reconst = filter_max(velocity_reconst, mean_vel_awcc)
+    elif args.filter_type == 'max_med':
+        print(f"\nRun filtering 'filter_max_med' based on mean velocity of {mean_vel_awcc} m/s\n")
+        velocity_reconst = filter_max_med(velocity_reconst, mean_vel_awcc)
+    elif args.filter_type == 'max_roc':
+        while sum(sum(np.isnan(velocity_reconst))) < sum(sum(np.isnan(filter_max_roc(velocity_reconst, mean_vel_awcc)))):
+            velocity_reconst = filter_max_roc(velocity_reconst, mean_vel_awcc)
+    else:
+        print("Filter of type <{args.filter_type}> does not exist.")
+        sys.exit()
+    discarded=(sum(sum(np.isnan(velocity_reconst)))/(len(velocity_reconst)*3))*100
+    print(f'Discarded data: {discarded:.2f} %\n')
 
     if args.ROC == 'True':
         # ROC filtering
