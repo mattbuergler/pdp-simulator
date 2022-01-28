@@ -254,43 +254,43 @@ def roc(u):
 
     # robust estimation of the variance:
     # expected value estimated through MED
-    u_med = np.nanmedian(u,axis=0)
-
+    u_med = np.nanmedian(u[:,0],axis=0)
     # ust estimated through MED
-    u_std = k * np.nanmedian(abs(u - u_med),axis=0)
+    u_std = k * np.nanmedian(abs(u[:,0] - u_med),axis=0)
     # universal threshold:
-    N = len(u)
+    # take only the number of non-nan values
+    N = len(u[~np.isnan(u[:,0])])
     lambda_u = math.sqrt(2*math.log(N))
     ku_std = lambda_u*u_std
-    ku_std[ku_std == 0.0] = np.nan
-
-    u_filt = np.zeros((N,3))
-    for ii in range(0,N):
-        if (abs((u[ii,:]-u_med)/ku_std) > 1.0).any():
+    u_filt = np.zeros((len(u),3))
+    for ii in range(0,len(u)):
+        if (abs((u[ii,0]-u_med)/ku_std) > 1.0):
             u_filt[ii,:] = np.nan
         else:
             u_filt[ii,:] = u[ii,:]
     return u_filt
 
-def roc_mod(u, u_med):
+def cutoff_roc(u):
     """
         Robust outlier cutoff based on the maximum absolute deviation and the 
         universal threshold.
 
         u:                  the velocity time series
-        u_med:              expected value
     """
 
+    k = 1.483; # based on a normal distro, see Rousseeuw and Croux (1993)
+
+    # robust estimation of the variance:
+    # expected value estimated through MED
+    u_med = np.nanmedian(u[:,0],axis=0)
     # ust estimated through MED
-    u_std = 0.5*u_med
-    N = len(u)
-    u_filt = np.zeros((N,3))
-    for ii in range(0,N):
-        if (abs((u[ii,0]-u_med)/u_std) > 1.0):
-            u_filt[ii,:] = np.nan
-        else:
-            u_filt[ii,:] = u[ii,:]
-    return u_filt
+    u_std = k * np.nanmedian(abs(u[:,0] - u_med),axis=0)
+    # universal threshold:
+    # take only the number of non-nan values
+    N = len(u[~np.isnan(u[:,0])])
+    lambda_u = math.sqrt(2*math.log(N))
+    ku_std = lambda_u*u_std
+    return ku_std
 
 def calc_velocity_awwcc(ii, start, stop, signal, f_sample, delta_x, args):
     n_lags = int(stop[ii] - start[ii])              # lags correspond to time windows
@@ -335,9 +335,6 @@ def run_sig_proc_awcc(path, args, config, sensor_ids, t_signal, signal):
     results = Parallel(n_jobs=int(args.nthreads),backend='multiprocessing')(delayed(calc_velocity_awwcc)(ii, start, stop, signal, f_sample, delta_x, args) for ii in range(0,n_windows))
     results = pd.concat(results)
 
-    # remove velocities <= 0
-    results['u_inst'] = np.where(results['u_inst'] >= 0, results['u_inst'], results['u_inst']*np.nan)
-
     # plot the figure for evaluation of the filtering
     evaluate_filtering(path, results['SPR_nofilter'], results['Rxymax_nofilter'], results['u_inst_nofilter'])
 
@@ -355,7 +352,12 @@ def run_sig_proc_awcc(path, args, config, sensor_ids, t_signal, signal):
         ifd_times['t_2h'][1] = start[ii]/f_sample
         ifd_times['t_2h+1'][1] = stop[ii]/f_sample
         bubble_props = {'ifd_times':ifd_times}
-        bubble_props['velocity'] = np.array([results['u_inst'][ii],0.0, 0.0])
+        u = np.array([0.0,0.0, 0.0])
+        if math.isnan(results['u_inst'][ii]):
+            u = np.array([results['u_inst'][ii],np.nan,np.nan])
+        else:
+            u = np.array([results['u_inst'][ii],0.0, 0.0])
+        bubble_props['velocity'] = u
         bubble_props['diameter'] = np.array([0.0, 0.0])
         bubble_props['chord_times'] = np.asarray(chord_times[ii])
         bubble_props['if_norm_unit_vecs'] = [np.array([0.0, 0.0, 0.0]), \
@@ -972,15 +974,16 @@ def get_awcc_properties(path, args, config, sensor_ids, t_signal, signal):
         velocity_awcc = roc(velocity_awcc)
     # get mean velocity estimate
     weighted_mean_velocity_awcc = np.empty(3)
-    weighted_mean_velocity_awcc[0] = np.nansum(velocity_awcc[:,0] \
-                                * (time_awcc[:,1]-time_awcc[:,0]),axis=0) \
-                                / np.nansum((time_awcc[:,1]-time_awcc[:,0])*(velocity_awcc[:,0]/velocity_awcc[:,0]),axis=0)
-    weighted_mean_velocity_awcc[1] = np.nansum(velocity_awcc[:,1] \
-                                * (time_awcc[:,1]-time_awcc[:,0]),axis=0) \
-                                / np.nansum((time_awcc[:,1]-time_awcc[:,0])*(velocity_awcc[:,1]/velocity_awcc[:,1]),axis=0)
-    weighted_mean_velocity_awcc[2] = np.nansum(velocity_awcc[:,2] \
-                                * (time_awcc[:,1]-time_awcc[:,0]),axis=0) \
-                                / np.nansum((time_awcc[:,1]-time_awcc[:,0])*(velocity_awcc[:,2]/velocity_awcc[:,2]),axis=0)        # Eq. (43) in Shen et al. (2005): estimated gas velocity
+    time_deltas = (time_awcc[:,1]-time_awcc[:,0])
+    weighted_mean_velocity_awcc[0] = np.nansum(velocity_awcc[:,0] * time_deltas,axis=0) \
+                                    / np.nansum(time_deltas[~np.isnan(velocity_awcc[:,0])],axis=0)
+    weighted_mean_velocity_awcc[1] = np.nansum(velocity_awcc[:,1] * time_deltas,axis=0) \
+                                    / np.nansum(time_deltas[~np.isnan(velocity_awcc[:,1])],axis=0)
+    weighted_mean_velocity_awcc[2] = np.nansum(velocity_awcc[:,2] * time_deltas,axis=0) \
+                                    / np.nansum(time_deltas[~np.isnan(velocity_awcc[:,2])],axis=0)
+
+
+    # Eq. (43) in Shen et al. (2005): estimated gas velocity
     # Initialize the reynolds stress tensors time series
     reynolds_stress_awcc = np.empty((len(velocity_awcc),3,3))
     for ii in range(0,len(velocity_awcc)):
@@ -1066,27 +1069,17 @@ def main():
         elif (ra_type == "dual_tip_ED"):
             # Event-detection (ED) for 2 tips
             print('Running AWCC to get initial velocity estimate for iterface pairing.\n')
-            # run AWCC for two tips to get first estimate of mean velocity
-            particles = run_sig_proc_awcc(path, args,
-                                            config,
-                                            sensor_ids,
-                                            t_signal,
-                                            signal[:,0:2])
 
-            velocity_estimate = np.empty((len(particles),3))
-            for ii,particle in enumerate(particles):
-                velocity_estimate[ii,:] = np.array([particle['velocity'][0], \
-                                                    particle['velocity'][1], \
-                                                    particle['velocity'][2]
-                                                    ])
-            # run ROC for velocity estimate
-            while sum(sum(np.isnan(velocity_estimate))) < sum(sum(np.isnan(roc(velocity_estimate)))):
-                velocity_estimate = roc(velocity_estimate)
-            # get mean velocity estimate
-            mean_velocity_estimate = np.nanmean(velocity_estimate, axis=0)
-            # Eq. (43) in Shen et al. (2005): estimated gas velocity
-            V_GAS = Decimal(mean_velocity_estimate[0])
-            print(f'Initial velocity estimate from AWCC: {V_GAS} m/s')
+            weighted_mean_velocity_awcc,mean_reynolds_stress_awcc = get_awcc_properties(path,
+                                                                    args,
+                                                                    config,
+                                                                    sensor_ids,
+                                                                    t_signal,
+                                                                    signal)
+
+            V_GAS = Decimal(weighted_mean_velocity_awcc[0])
+
+            print(f'Mean velocity from AWCC: {V_GAS:.2f} m/s')
 
             # get the distance vector between leading and trailing tips
             aux_sensor_ids, max_t_k,S_0k_mag,S_0k,cos_eta_0k = get_sensor_distance_vectors(config)
@@ -1176,23 +1169,23 @@ def main():
     # data filtering
     # ROC filtering, R12 and SPR filtering implemented in previous loop
     if args.ROC == 'True':
+        discarded=(sum(sum(np.isnan(velocity_reconst)))/(len(velocity_reconst)*3))*100
+        print(f'Already discarded data: {discarded:.2f} %.\n')
         print('Performing robust outlier cutoff.\n')
-        if ((n_sensors >= 4) | (ra_type == "dual_tip_ED")):
-            velocity_reconst = roc_mod(velocity_reconst, float(V_GAS))
         while sum(sum(np.isnan(velocity_reconst))) < sum(sum(np.isnan(roc(velocity_reconst)))):
             velocity_reconst = roc(velocity_reconst)
-        discarded=(sum(np.isnan(velocity_reconst)[:,0])/len(velocity_reconst))*100
-        print(f'Discarded data: {discarded:.2f} %\n')
+        cutoff = cutoff_roc(velocity_reconst)
+        discarded=(sum(sum(np.isnan(velocity_reconst)))/(len(velocity_reconst)*3))*100
+        print(f'Total discarded data: {discarded:.2f} %, with a cutoff of {cutoff:.4f} m/s.\n')
 
-    weighted_mean_velocity_reconst[0] = np.nansum(velocity_reconst[:,0] \
-                                    * (time_reconst[:,1]-time_reconst[:,0]),axis=0) \
-                                    / np.nansum((time_reconst[:,1]-time_reconst[:,0])*(velocity_reconst[:,0]/velocity_reconst[:,0]),axis=0)
-    weighted_mean_velocity_reconst[1] = np.nansum(velocity_reconst[:,1] \
-                                    * (time_reconst[:,1]-time_reconst[:,0]),axis=0) \
-                                    / np.nansum((time_reconst[:,1]-time_reconst[:,0])*(velocity_reconst[:,1]/velocity_reconst[:,1]),axis=0)
-    weighted_mean_velocity_reconst[2] = np.nansum(velocity_reconst[:,2] \
-                                    * (time_reconst[:,1]-time_reconst[:,0]),axis=0) \
-                                    / np.nansum((time_reconst[:,1]-time_reconst[:,0])*(velocity_reconst[:,2]/velocity_reconst[:,2]),axis=0)
+    time_deltas = (time_reconst[:,1]-time_reconst[:,0])
+    weighted_mean_velocity_reconst[0] = np.nansum(velocity_reconst[:,0] * time_deltas,axis=0) \
+                                    / np.nansum(time_deltas[~np.isnan(velocity_reconst[:,0])],axis=0)
+    weighted_mean_velocity_reconst[1] = np.nansum(velocity_reconst[:,1] * time_deltas,axis=0) \
+                                    / np.nansum(time_deltas[~np.isnan(velocity_reconst[:,1])],axis=0)
+    weighted_mean_velocity_reconst[2] = np.nansum(velocity_reconst[:,2] * time_deltas,axis=0) \
+                                    / np.nansum(time_deltas[~np.isnan(velocity_reconst[:,2])],axis=0)
+
     # Calculate mean velocity
     mean_velocity_reconst = np.nanmean(velocity_reconst, axis=0)
     # Initialize the reynolds stress tensors time series
@@ -1256,6 +1249,7 @@ def main():
     # Create the IAC and void_fraction datasets
     writer.writeDataSet('IAC', np.array([IAC],dtype='float64'), 'float64')
     writer.writeDataSet('voidFraction', np.array([np.mean(signal[:,0])]), 'float64')
+    writer.writeDataSet('bubbles/data_rate', np.array([len(velocity_reconst[~np.isnan(velocity_reconst[:,0])])/(time_reconst[-1,1]-time_reconst[0,0])]), 'float64')
     writer.close()
     time2 = time.time()
     print(f'Successfully run the reconstruction algorithm')
