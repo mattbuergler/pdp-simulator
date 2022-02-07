@@ -229,15 +229,12 @@ def SBG_fluid_velocity(path, flow_properties, reproducible, progress):
     # Zero mean
     mean = [0.0, 0.0, 0.0]
     # Zero Z-Components of covariance in a statistically 2D flow (Pope, 2000)
-    pXZ = -0.45
-    pYZ = 0.0
-    # rho_{uv}=-0.45 at y+~98 (Table 7.2 Pope, 2000)
-    pXY = 0.0
+    rho_shear = flow_properties['shear_stress_corr_coeff']
     # Covariance with diagonal components = 1
-    cov = [[1.0, pXY, pXZ], \
-           [pXY, 1.0, pYZ], \
-           [pXZ, pYZ, 1.0]]
-
+    cov = [[1.0, rho_shear[0], rho_shear[1]], \
+           [rho_shear[0], 1.0, rho_shear[2]], \
+           [rho_shear[1], rho_shear[2], 1.0]]
+    
     print('\nGenerating velocity and trajectory time series of the fluid\n')
     # Time series is written in chunks of size n_chunk_max in order to avoid
     # memory overload

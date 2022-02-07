@@ -162,6 +162,16 @@
           "description": "Factor for the turbulent intensity [-].",
           "default": 1.0
         },
+        "shear_stress_corr_coeff": {
+          "type": "array",
+          "description": "The cross correlation coefficients of the xy-, xz-, and yz-shear-stress [-].",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "number",
+            "mininum": 0.0
+          }
+        },
         "integral_timescale": {
           "type": "array",
           "description": "The (x,y,z) components of the integral time scales [-].",
