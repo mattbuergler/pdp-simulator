@@ -134,4 +134,4 @@ def get_git_version() -> str:
     return subprocess.check_output(['git', 'describe', '--always','--long']).decode('ascii').strip()
 
 def printHeader():
-    print(f'MULTIPHADE v-{get_git_version()}\n')
+    print(f'MULTIPHADE {get_git_version()}\n')
