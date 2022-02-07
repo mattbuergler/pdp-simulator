@@ -131,7 +131,7 @@ def get_git_revision_short_hash() -> str:
     return subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode('ascii').strip()
 
 def get_git_version() -> str:
-    return subprocess.check_output(['git', 'describe', '--always']).decode('ascii').strip()
+    return subprocess.check_output(['git', 'describe', '--always','--long']).decode('ascii').strip()
 
 def printHeader():
     print(f'MULTIPHADE v-{get_git_version()}\n')
