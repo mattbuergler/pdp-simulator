@@ -1,3 +1,5 @@
 *.py    eol=lf
 *.md   eol=lf
 *.json  eol=lf
+
+mssrc.py ident
