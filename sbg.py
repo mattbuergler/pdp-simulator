@@ -13,6 +13,7 @@ import matplotlib as plt
 try:
     import sbg_functions
     import velocity_tsa
+    from tools.globals import *
 except ImportError:
     print("")
     raise
@@ -74,8 +75,11 @@ def main():
     # Validate the configuration file
     jsonschema.validate(instance=config, schema=schema)
 
+    printHeader()
+
     command = args.run
     if command in ["timeseries", 'all']:
+        print('Stochastic Time Series Generator (STSG)\n')
         # Generate the stochastic velocity and trajectory time series
         sbg_functions.SBG_fluid_velocity(
             path=path,
@@ -89,6 +93,7 @@ def main():
             progress=args.progress
         )
     if command in ["signal", 'all']:
+        print('Synthetic Signal Generator (SSG)\n')
         if 'UNCERTAINTY_QUANTIFICATION' not in config:
             config['UNCERTAINTY_QUANTIFICATION'] = {}
         # Generate the probe signal

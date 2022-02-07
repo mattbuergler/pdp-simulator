@@ -45,8 +45,6 @@ except ImportError:
 COEFF_0 = Decimal(0.3)   # Eq. (43) in Shen et al. (2005): low limit constant
 V_GAS = Decimal(0.0)     # Eq. (43) in Shen et al. (2005): dummy value, calculated later
 
-git_hash = '$Id$'
-
 def inverse_den(x):
     """
     Calculate inverse of a number.
@@ -1025,6 +1023,9 @@ def main():
     parser.add_argument('-p', '--progress', action='store_true',
         help='Show progress bar.')
     args = parser.parse_args()
+
+    printHeader()
+    print('Multi-Sensors Signal Reconstruction (MSSRC)\n')
 
     global V_GAS
 
