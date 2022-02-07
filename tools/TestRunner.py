@@ -265,14 +265,9 @@ class TestRunner:
             PRINTERRORANDEXIT("runfile <" + str(runfile) + "> does not exists")
         # create simulation call
         # get a velocity estimate
-        config = json.loads((runfile).read_bytes())
-        vel = np.asarray(config["FLOW_PROPERTIES"]["mean_velocity"])
-        mag_vel = np.sqrt(vel.dot(vel))
         cmd = [
             "python",
             str(pathlib.Path(self.bin) / "mssrc.py"),
-            "-vel",
-            str(mag_vel),
             "-roc",
             str(self.roc),
             "-n",

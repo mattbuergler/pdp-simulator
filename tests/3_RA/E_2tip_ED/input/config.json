@@ -35,7 +35,8 @@
         ]
     },
     "RECONSTRUCTION": {
-        "type": "dual_tip_ED"
+        "type": "dual_tip_ED",
+        "n_particles": 10
     },
     "REPRODUCIBLE": "yes"
 }
