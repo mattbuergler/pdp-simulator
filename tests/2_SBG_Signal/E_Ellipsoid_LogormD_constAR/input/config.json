@@ -2,6 +2,7 @@
     "FLOW_PROPERTIES": {
         "mean_velocity":[5.0, 0.0, 0.0],
         "turbulent_intensity": [0.1, 0.05, 0.05],
+        "shear_stress_corr_coeff": [0.0,-0.45,0.0],
         "integral_timescale": [0.01, 0.005, 0.005],
         "bubbles": {
             "shape": "ellipsoid",
