@@ -334,7 +334,6 @@ def run_sig_proc_awcc(path, args, config, sensor_ids, t_signal, signal):
     n_windows,start,stop,t,chord_times = windows(chord_a,chord_w,n_particles,f_sample, progress=args.progress)
     results = Parallel(n_jobs=int(args.nthreads),backend='multiprocessing')(delayed(calc_velocity_awwcc)(ii, start, stop, signal, f_sample, delta_x, args) for ii in range(0,n_windows))
     results = pd.concat(results)
-
     # plot the figure for evaluation of the filtering
     evaluate_filtering(path, results['SPR_nofilter'], results['Rxymax_nofilter'], results['u_inst_nofilter'])
 
