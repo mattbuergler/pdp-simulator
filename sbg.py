@@ -52,7 +52,7 @@ def main():
         + "all        - create velocity time series, trajectory and also the probe signal\n"
     )
     parser.add_argument('-tsa', '--velocity_tsa', action='store_true',
-        help="Run the velocity time series analysis.", default=False)
+        help="Run the velocity time series analysis.")
     parser.add_argument('-p', '--progress', action='store_true',
         help='Show progress bar.')
     parser.add_argument(
@@ -64,6 +64,8 @@ def main():
     )
     args = parser.parse_args()
 
+    printHeader()
+
     # Create Posix path for OS indepency
     path = pathlib.Path(args.path)
     input_file = path / 'config.json'
@@ -74,8 +76,6 @@ def main():
     schema = json.loads(schema_file.read_bytes())
     # Validate the configuration file
     jsonschema.validate(instance=config, schema=schema)
-
-    printHeader()
 
     command = args.run
     if command in ["timeseries", 'all']:

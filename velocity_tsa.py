@@ -33,16 +33,19 @@ def main(args):
         Main function of the velocity timeseries analysis
 
     """
+    if type(args) == str:
+        path = pathlib.Path(args)
+    else:
+        # Create parser to read in the configuration JSON-file to read from
+        # the command line interface (CLI)
+        parser = argparse.ArgumentParser(description=__doc__)
+        parser.add_argument('path', type=str,
+            help="The path to the scenario directory.")
+        args = parser.parse_args(args)
 
-    # Create parser to read in the configuration JSON-file to read from
-    # the command line interface (CLI)
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('path', type=str,
-        help="The path to the scenario directory.")
-    args = parser.parse_args(args)
+        # Create Posix path for OS indepency
+        path = pathlib.Path(args.path)
 
-    # Create Posix path for OS indepency
-    path = pathlib.Path(args.path)
     # Create a H5-file reader
     reader = H5Reader(path / 'flow_data.h5')
     # Read the cont. velocity
