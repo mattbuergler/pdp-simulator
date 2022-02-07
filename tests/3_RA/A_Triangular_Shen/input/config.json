@@ -50,7 +50,8 @@
         ]
     },
     "RECONSTRUCTION": {
-        "type": "Shen_Nakamura_2014"
+        "type": "Shen_Nakamura_2014",
+        "n_particles": 10
     },
     "REPRODUCIBLE": "yes"
 }

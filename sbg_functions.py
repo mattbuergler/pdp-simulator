@@ -61,7 +61,7 @@ def get_bubble_size(flow_properties):
         elif bubbles['size_distribution'] == 'lognormal':
             # Mean bubble frequency
             F = 1.5 * C * np.linalg.norm(Um)  \
-                / math.exp(bubbles['mean_ln_diameter'])
+                / math.exp(bubbles['mean_ln_diameter']+0.5*bubbles['sd_ln_diameter']**2)
             # Number of simulated bubbles
             nb = round(F * tau)
             # Sample lognormal distribution
@@ -118,7 +118,7 @@ def get_bubble_size(flow_properties):
         elif bubbles['size_distribution'] == 'lognormal':
             # Mean bubble frequency
             F = 1.5 * C * np.linalg.norm(Um) \
-                / math.exp(bubbles['mean_ln_diameter'])
+                / math.exp(bubbles['mean_ln_diameter']+0.5*bubbles['sd_ln_diameter']**2)
             # Number of simulated bubbles
             nb = round(F*tau)
             # Sphere-volume-equivalent bubble diameter
@@ -176,7 +176,7 @@ def get_mean_bubble_sve_size(flow_properties):
     if bubbles['size_distribution'] == 'constant':
         D_sve = bubbles['diameter']
     elif bubbles['size_distribution'] == 'lognormal':
-        D_sve = math.exp(bubbles['mean_ln_diameter'])
+        D_sve = math.exp(bubbles['mean_ln_diameter']+0.5*bubbles['sd_ln_diameter']**2)
     return D_sve
 
 def SBG_fluid_velocity(path, flow_properties, reproducible, progress):
