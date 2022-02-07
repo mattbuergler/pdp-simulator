@@ -263,7 +263,7 @@ def roc(u):
     ku_std = lambda_u*u_std
     u_filt = np.zeros((len(u),3))
     for ii in range(0,len(u)):
-        if (abs((u[ii,0]-u_med)/ku_std) > 1.0):
+        if (abs((u[ii,0]-u_med)*float(inverse_den(Decimal(ku_std)))) > 1.0):
             u_filt[ii,:] = np.nan
         else:
             u_filt[ii,:] = u[ii,:]
