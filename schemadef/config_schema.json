@@ -247,19 +247,64 @@
       "type": "object",
       "description": "Definitions regarding the reconstruction algorithm.",
       "required": ["type"],
-      "optional": ["n_particles"],
+      "optional": ["n_particles","interface_pairing","max_disparity"],
       "properties": {
         "type": {
           "type": "string",
           "description": "The reconstruction algorithm: Shen and Nakamura (2014), or Tian et al. (2015); or AWCC (Kramer et al., 2020).",
           "enum": ["Shen_Nakamura_2014", "Tian_et_al_2015", "dual_tip_AWCC","dual_tip_ED"]
         },
+        "interface_pairing": {
+          "type": "string",
+          "description": "The interface-pairing signal processing algorithm: Shen et al. (2005); or Kramer et al. (2020).",
+          "enum": ["Shen_et_al_2005", "Kramer_et_al_2020"],
+          "default": "Shen_et_al_2005"
+        },
+        "max_disparity": {
+          "type": "number",
+          "description": "Max. disparity threshold representing the confidence that the same bubble impacts both leading and trailing tips. Only required for algorithm of Kramer et al. (2020).",
+          "minimum": 0.0
+        },
         "n_particles": {
           "type": "number",
           "description": "The number of particles per averaging windows used for AWCC (Kramer et al., 2020).",
           "exclusiveMinimum": 0.0
         }
-      }
+      },
+      "oneOf":[
+        {
+          "properties": {
+            "type": {
+              "const": "Shen_Nakamura_2014"
+            }
+          },
+          "required": ["interface_pairing","n_particles"]
+        },
+        {
+          "properties": {
+           "type": {
+              "const": "Tian_et_al_2015"
+            }
+          },
+          "required": ["interface_pairing","n_particles"]
+        },
+        {
+          "properties": {
+           "type": {
+              "const": "dual_tip_AWCC"
+            }
+          },
+          "required": ["n_particles"]
+        },
+        {
+          "properties": {
+           "type": {
+              "const": "dual_tip_ED"
+            }
+          },
+          "required": ["interface_pairing","n_particles"]
+        }
+      ]
     },
     "REPRODUCIBLE": {
       "type": "string",
