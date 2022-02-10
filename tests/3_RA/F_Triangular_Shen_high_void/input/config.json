@@ -51,6 +51,7 @@
     },
     "RECONSTRUCTION": {
         "type": "Shen_Nakamura_2014",
+        "interface_pairing": "Shen_et_al_2005",
         "n_particles": 10
     },
     "REPRODUCIBLE": "yes"
