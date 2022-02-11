@@ -247,7 +247,7 @@
       "type": "object",
       "description": "Definitions regarding the reconstruction algorithm.",
       "required": ["type"],
-      "optional": ["n_particles","interface_pairing","max_disparity"],
+      "optional": ["max_disparity"],
       "properties": {
         "type": {
           "type": "string",
@@ -257,8 +257,7 @@
         "interface_pairing": {
           "type": "string",
           "description": "The interface-pairing signal processing algorithm: Shen et al. (2005); or Kramer et al. (2020).",
-          "enum": ["Shen_et_al_2005", "Kramer_et_al_2020"],
-          "default": "Shen_et_al_2005"
+          "enum": ["Shen_et_al_2005", "Kramer_et_al_2020"]
         },
         "max_disparity": {
           "type": "number",

@@ -1170,7 +1170,6 @@ def main():
     # Check the reconstruction algorithm type
     ra_type = config['RECONSTRUCTION']['type']
     # Check the interface-pairing signal processing algorithm
-    interface_pairing_algo = config['RECONSTRUCTION']['interface_pairing']
     bubbles_complete = []
     if (n_sensors == 2):
         if (ra_type == "dual_tip_AWCC"):
@@ -1199,7 +1198,7 @@ def main():
             # get the distance vector between leading and trailing tips
             aux_sensor_ids, max_t_k,S_0k_mag,S_0k,cos_eta_0k = get_sensor_distance_vectors(config)
             sensors = config['PROBE']['sensors']
-        
+            interface_pairing_algo = config['RECONSTRUCTION']['interface_pairing']
             # run interface-pairing signal processing algorithm
             if interface_pairing_algo == "Shen_et_al_2005":
                 bubbles = run_event_detection_shen(args,
@@ -1249,13 +1248,27 @@ def main():
 
         # get the distance vector between leading and trailing tips
         aux_sensor_ids, max_t_k,S_0k_mag,S_0k,cos_eta_0k = get_sensor_distance_vectors(config)
-        # run event detection algorithm
-        bubbles = run_event_detection_shen(args,
+        
+        interface_pairing_algo = config['RECONSTRUCTION']['interface_pairing']
+        # run interface-pairing signal processing algorithm
+        if interface_pairing_algo == "Shen_et_al_2005":
+            bubbles = run_event_detection_shen(args,
                                         aux_sensor_ids,
                                         max_t_k,
                                         sensor_ids,
                                         t_signal,
                                         signal)
+        elif interface_pairing_algo == "Kramer_et_al_2020":
+            max_disparity = config['RECONSTRUCTION']['max_disparity']
+            bubbles = run_event_detection_kramer(args,
+                                        aux_sensor_ids,
+                                        sensor_ids,
+                                        t_signal,
+                                        signal,
+                                        max_disparity)
+        else:
+            PRINTERRORANDEXIT(f'Interface-pairing signal processing algorithm <{interface_pairing_algo}> not valid.')
+
 
         print('\nStarting signal processing...\n')
         # Initialize the Interfacial Area Concentration (IAC)
@@ -1285,7 +1298,9 @@ def main():
     time_reconst = np.empty((len(bubbles_complete),2))
     # Collect bubble properties, such as diameter
     bubble_diam_reconst = np.empty((len(bubbles_complete),2))
-    disparity_reconst = np.empty((len(bubbles_complete),len(aux_sensor_ids)))
+    if ((n_sensors >= 4) | (ra_type == "dual_tip_ED")):
+        if (interface_pairing_algo == "Kramer_et_al_2020"):
+            disparity_reconst = np.empty((len(bubbles_complete),len(aux_sensor_ids)))
     for ii,bubble_props in enumerate(bubbles_complete):
         velocity_reconst[ii,:] = np.array([bubble_props['velocity'][0], \
                                            bubble_props['velocity'][1], \
@@ -1294,8 +1309,9 @@ def main():
         time_reconst[ii,0] = np.nanmin(bubble_props['ifd_times'].to_numpy().astype('float64'))
         time_reconst[ii,1] = np.nanmax(bubble_props['ifd_times'].to_numpy().astype('float64'))
         bubble_diam_reconst[ii,:] = bubble_props['diameter']
-        if interface_pairing_algo == "Kramer_et_al_2020":
-            disparity_reconst[ii,:] = bubble_props['disparity']
+        if ((n_sensors >= 4) | (ra_type == "dual_tip_ED")):
+            if (interface_pairing_algo == "Kramer_et_al_2020"):
+                disparity_reconst[ii,:] = bubble_props['disparity']
     # data filtering
     # ROC filtering, R12 and SPR filtering implemented in previous loop
     if args.ROC == 'True':
@@ -1368,9 +1384,9 @@ def main():
             weighted_mean_velocity_awcc, 'float64')
         writer.writeDataSet('bubbles/reynold_stresses_awcc', \
         mean_reynolds_stress_awcc, 'float64')
-    if interface_pairing_algo == "Kramer_et_al_2020":
-        writer.writeDataSet('bubbles/disparity', \
-        disparity_reconst, 'float64')
+        if interface_pairing_algo == "Kramer_et_al_2020":
+            writer.writeDataSet('bubbles/disparity', \
+            disparity_reconst, 'float64')
     ds_vel = writer.getDataSet('bubbles/velocity')
     # Add the attributes
     ds_vel.attrs['labels'] = ['Ux','Uy','Uz']
