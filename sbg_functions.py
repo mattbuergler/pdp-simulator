@@ -372,7 +372,7 @@ def SBG_bubble_velocity(path, flow_properties, progress):
     for ii in range(1, len(t_f)):
         dt = t_f[ii] - t_f[ii-1]            # Integration time step
         u_r = u_f[ii-1,:] - u_p[ii-1,:]     # Rel. velocity of prev. timestep
-        Re = rho_p*abs(u_r)*d/mu_f          # Bubble Reynolds number
+        Re = rho_f*abs(u_r)*d/mu_f          # Bubble Reynolds number
         phi = 1.0 + 0.15*(Re**0.687)        # Drag coefficient * Re / 24
         du_dt = 1.0/dt * (u_f[ii,:]
                         -u_f[ii-1,:])       # Time derivative of fluid velocity
