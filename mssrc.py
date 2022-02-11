@@ -412,7 +412,7 @@ def get_sensor_distance_vectors(config):
 
     return aux_sensor_ids, max_t_k, S_0k_mag, S_0k, cos_eta_0k
 
-def run_interface_pairing(idx_rise_0, id0, max_t_k, signal, signal_ifd, sensor_ids, aux_sensor_ids, t_signal_ifd_list, args):
+def run_interface_pairing_shen(idx_rise_0, id0, max_t_k, signal, signal_ifd, sensor_ids, aux_sensor_ids, t_signal_ifd_list, args):
     # DataFrame with time of IFD of front (2h) and rear (2h+1) bubble
     # interface for each sensor
     ifd_times = pd.DataFrame(index=sensor_ids, columns=['t_2h','t_2h+1'])
@@ -553,13 +553,17 @@ def run_interface_pairing(idx_rise_0, id0, max_t_k, signal, signal_ifd, sensor_i
 
     return bubble_props
 
-
-def run_event_detection(args, aux_sensor_ids, max_t_k, sensor_ids, t_signal, signal):
+def run_event_detection_shen(args, aux_sensor_ids, max_t_k, sensor_ids, t_signal, signal):
     """
         This is the event-detection (ED) algorithm, based on interface pairing.
         The algorithm matches the interface detection by the leading and 
         trailing tip(s) of the probe for each individual particle-probe 
         interaction.
+
+        Shen, X., Saito, Y., Mishima, K., & Nakamura, H. (2005). Methodological
+        improvement of an intrusive four-sensor probe for the multi-dimensional
+        two-phase flow measurement. International journal of multiphase flow,
+        31(5), 593-617.
 
         args:           the arguments from the CL-parser
         aux_sensor_ids: the auxillary (or trailing) sensor ids
@@ -588,10 +592,120 @@ def run_event_detection(args, aux_sensor_ids, max_t_k, sensor_ids, t_signal, sig
     signal_ifd_rise_0 = np.where(signal_ifd[:,id0] > 0.0)[0]
     # Initialize lists to store bubbles
     print('\nChecking for complete bubbles....\n')
-    bubbles = Parallel(n_jobs=int(args.nthreads),backend='threading')(delayed(run_interface_pairing)(idx_rise_0, id0, max_t_k, signal[idx_rise_0,:], signal_ifd, sensor_ids, aux_sensor_ids, t_signal_ifd_list, args) for idx_rise_0 in signal_ifd_rise_0)
+    bubbles = Parallel(n_jobs=int(args.nthreads),backend='threading')(delayed(run_interface_pairing_shen)(idx_rise_0, id0, max_t_k, signal[idx_rise_0,:], signal_ifd, sensor_ids, aux_sensor_ids, t_signal_ifd_list, args) for idx_rise_0 in signal_ifd_rise_0)
 
     return bubbles
 
+def run_event_detection_kramer(args, aux_sensor_ids, sensor_ids, t_signal, signal, d_max):
+    """
+        This is the event-detection (ED) algorithm, based on interface pairing.
+        The algorithm matches the interface detection by the leading and 
+        trailing tip(s) of the probe for each individual particle-probe 
+        interaction.
+
+        Kramer, M., Hohermuth, B., Valero, D., Felder, S., 2020b. Leveraging 
+        event detection techniques and cross-correlation analysis for phase-
+        detection probe measurements in turbulent air-water flows. 
+        In: Proceedings of the 8th IAHR International Symposium on Hydraulic 
+        Structures (ISHS 2020), Santiago, Chile. 31(5), 593-617.
+
+        args:           the arguments from the CL-parser
+        aux_sensor_ids: the auxillary (or trailing) sensor ids
+        sensor_ids:     IDs of the sensors
+        t_signal:       the time series of the signal
+        signal:         the signal
+        d_max:          the maximum disparity threshold
+    """
+
+    print('\nStarting event-detection algorithm....')
+    # Create interface-detection (IFD) signal by first order difference
+    signal_ifd = signal[1:len(signal)] - signal[0:(len(signal)-1)]
+
+    # Get average time for each difference
+    t_signal_ifd_list = []
+    for ii in range(0,len(t_signal)-1):
+        t_signal_ifd_list.append(Decimal(t_signal[ii]) \
+            + (Decimal(t_signal[ii+1])-Decimal(t_signal[ii]))/Decimal(2.0))
+
+    # Interface-pairing signal-processing scheme
+    # Kramer et al. (2020)
+    t_rise_fall_central_chord = {}
+    for k in sensor_ids:
+        idk = np.where(sensor_ids == k)[0][0]
+        # Indices of the rising IFD signals
+        signal_ifd_rise_k = np.where(signal_ifd[:,idk] > 0.0)[0]
+        signal_ifd_fall_k = np.where(signal_ifd[:,idk] < 0.0)[0]
+        t_rise_k = []
+        t_fall_k = []
+        t_central_k = []
+        t_chord_k = []
+        for idx_rise_k in signal_ifd_rise_k:
+            # time of signal rise
+            t_idx_rise_k = t_signal_ifd_list[idx_rise_k]
+            if len(signal_ifd_fall_k[signal_ifd_fall_k > idx_rise_k]) > 0:
+                idx_fall_k = min(signal_ifd_fall_k[signal_ifd_fall_k > idx_rise_k])
+                # Write t_b+1 of sensor 0
+                t_idx_fall_k = t_signal_ifd_list[idx_fall_k]
+            else:
+                t_idx_fall_k = np.nan
+            t_p = (t_idx_rise_k + t_idx_fall_k)/Decimal(2.0)
+            t_ch = t_idx_fall_k - t_idx_rise_k
+            t_rise_k.append(t_idx_rise_k)
+            t_fall_k.append(t_idx_fall_k)
+            t_chord_k.append(t_ch)
+            t_central_k.append(t_p)
+
+        t_rise_fall_central_chord[idk] = np.array([np.asarray(t_rise_k),\
+                                                np.asarray(t_fall_k),\
+                                                np.asarray(t_central_k),\
+                                                np.asarray(t_chord_k)]\
+                                                ).astype(float).transpose()
+
+    # Get the column number of the main sensor 0, just in case the order gets
+    # messed up along the process
+    id0 = np.where(sensor_ids == 0)[0][0]
+    print('\nChecking for bubbles....')
+    bubbles = []
+    N = len(t_rise_fall_central_chord[id0])
+    # time between particle ii and particle ii+1 hitting leading sensor 0
+    t_travel_k_ip1 = t_rise_fall_central_chord[id0][1:N,2]-t_rise_fall_central_chord[id0][0:(N-1),2]
+    # append dummy value for last particle
+    t_travel_k_ip1 = np.append(t_travel_k_ip1,1.0)
+    for ii,t0 in enumerate(t_rise_fall_central_chord[id0]):
+        ifd_times = pd.DataFrame(index=sensor_ids, columns=['t_2h','t_2h+1'])
+        disparity = pd.DataFrame(index=aux_sensor_ids, columns=['disparity'])
+        # Write t_2h of sensor 0
+        # set interface detection times for the leading sensor 0
+        ifd_times['t_2h'][0] = t0[0]
+        ifd_times['t_2h+1'][0] = t0[1]
+        aux_sensors_complete = []
+        for k in aux_sensor_ids:
+            idk = np.where(sensor_ids == k)[0][0]
+            t_travel_k = t_rise_fall_central_chord[idk][:,2]-t0[2]
+            t_travel_k_pos = t_travel_k[t_travel_k > 0] 
+            if len(t_travel_k_pos) > 0:
+                idx_travel_k = np.where(t_travel_k == np.nanmin(t_travel_k_pos))
+                t_travel_k = t_travel_k[idx_travel_k]
+                disparity_k = abs((t0[3] - t_rise_fall_central_chord[idk][idx_travel_k,3])/t0[3])
+                disparity['disparity'][k] = disparity_k
+                if (disparity_k < d_max) & (t_travel_k < t_travel_k_ip1[ii]):
+                    ifd_times['t_2h'][k] = t_rise_fall_central_chord[idk][idx_travel_k,0][0][0]
+                    ifd_times['t_2h+1'][k] = t_rise_fall_central_chord[idk][idx_travel_k,1][0][0]
+                    aux_sensors_complete.append(k)
+                else:
+                    ifd_times['t_2h'][k] = np.nan
+                    ifd_times['t_2h+1'][k] = np.nan
+            else:
+                ifd_times['t_2h'][k] = np.nan
+                ifd_times['t_2h+1'][k] = np.nan
+        # store sensors with valid signal as bubble property
+        bubble_props = {'aux_sensors_complete':aux_sensors_complete}
+        # Store the interface detection times for complete and
+        # incomplete bubbles
+        bubble_props['ifd_times'] = ifd_times
+        bubble_props['disparity'] = disparity.values
+        bubbles.append(bubble_props)
+    return bubbles
 
 def run_sig_proc_dual_ED(args, bubble_props, sensors, cos_eta_0k):
     """
@@ -1055,6 +1169,7 @@ def main():
     n_sensors = len(sensor_ids)
     # Check the reconstruction algorithm type
     ra_type = config['RECONSTRUCTION']['type']
+    # Check the interface-pairing signal processing algorithm
     bubbles_complete = []
     if (n_sensors == 2):
         if (ra_type == "dual_tip_AWCC"):
@@ -1070,7 +1185,6 @@ def main():
         elif (ra_type == "dual_tip_ED"):
             # Event-detection (ED) for 2 tips
             print('Running AWCC to get initial velocity estimate for iterface pairing.\n')
-
             weighted_mean_velocity_awcc,mean_reynolds_stress_awcc = get_awcc_properties(path,
                                                                     args,
                                                                     config,
@@ -1079,19 +1193,31 @@ def main():
                                                                     signal)
 
             V_GAS = Decimal(weighted_mean_velocity_awcc[0])
-
             print(f'Mean velocity from AWCC: {V_GAS:.2f} m/s')
 
             # get the distance vector between leading and trailing tips
             aux_sensor_ids, max_t_k,S_0k_mag,S_0k,cos_eta_0k = get_sensor_distance_vectors(config)
             sensors = config['PROBE']['sensors']
-            # run event detection algorithm
-            bubbles = run_event_detection(args,
-                                    aux_sensor_ids,
-                                    max_t_k,
-                                    sensor_ids,
-                                    t_signal,
-                                    signal)
+            interface_pairing_algo = config['RECONSTRUCTION']['interface_pairing']
+            # run interface-pairing signal processing algorithm
+            if interface_pairing_algo == "Shen_et_al_2005":
+                bubbles = run_event_detection_shen(args,
+                                            aux_sensor_ids,
+                                            max_t_k,
+                                            sensor_ids,
+                                            t_signal,
+                                            signal)
+            elif interface_pairing_algo == "Kramer_et_al_2020":
+                max_disparity = config['RECONSTRUCTION']['max_disparity']
+                bubbles = run_event_detection_kramer(args,
+                                            aux_sensor_ids,
+                                            sensor_ids,
+                                            t_signal,
+                                            signal,
+                                            max_disparity)
+            else:
+                PRINTERRORANDEXIT(f'Interface-pairing signal processing algorithm <{interface_pairing_algo}> not valid.')
+
             # Loop over bubbles
             for ii,bubble_props in enumerate(bubbles):
                 run_sig_proc_dual_ED(args,
@@ -1122,13 +1248,27 @@ def main():
 
         # get the distance vector between leading and trailing tips
         aux_sensor_ids, max_t_k,S_0k_mag,S_0k,cos_eta_0k = get_sensor_distance_vectors(config)
-        # run event detection algorithm
-        bubbles = run_event_detection(args,
-                                    aux_sensor_ids,
-                                    max_t_k,
-                                    sensor_ids,
-                                    t_signal,
-                                    signal)
+        
+        interface_pairing_algo = config['RECONSTRUCTION']['interface_pairing']
+        # run interface-pairing signal processing algorithm
+        if interface_pairing_algo == "Shen_et_al_2005":
+            bubbles = run_event_detection_shen(args,
+                                        aux_sensor_ids,
+                                        max_t_k,
+                                        sensor_ids,
+                                        t_signal,
+                                        signal)
+        elif interface_pairing_algo == "Kramer_et_al_2020":
+            max_disparity = config['RECONSTRUCTION']['max_disparity']
+            bubbles = run_event_detection_kramer(args,
+                                        aux_sensor_ids,
+                                        sensor_ids,
+                                        t_signal,
+                                        signal,
+                                        max_disparity)
+        else:
+            PRINTERRORANDEXIT(f'Interface-pairing signal processing algorithm <{interface_pairing_algo}> not valid.')
+
 
         print('\nStarting signal processing...\n')
         # Initialize the Interfacial Area Concentration (IAC)
@@ -1158,6 +1298,9 @@ def main():
     time_reconst = np.empty((len(bubbles_complete),2))
     # Collect bubble properties, such as diameter
     bubble_diam_reconst = np.empty((len(bubbles_complete),2))
+    if ((n_sensors >= 4) | (ra_type == "dual_tip_ED")):
+        if (interface_pairing_algo == "Kramer_et_al_2020"):
+            disparity_reconst = np.empty((len(bubbles_complete),len(aux_sensor_ids)))
     for ii,bubble_props in enumerate(bubbles_complete):
         velocity_reconst[ii,:] = np.array([bubble_props['velocity'][0], \
                                            bubble_props['velocity'][1], \
@@ -1166,7 +1309,9 @@ def main():
         time_reconst[ii,0] = np.nanmin(bubble_props['ifd_times'].to_numpy().astype('float64'))
         time_reconst[ii,1] = np.nanmax(bubble_props['ifd_times'].to_numpy().astype('float64'))
         bubble_diam_reconst[ii,:] = bubble_props['diameter']
-
+        if ((n_sensors >= 4) | (ra_type == "dual_tip_ED")):
+            if (interface_pairing_algo == "Kramer_et_al_2020"):
+                disparity_reconst[ii,:] = bubble_props['disparity']
     # data filtering
     # ROC filtering, R12 and SPR filtering implemented in previous loop
     if args.ROC == 'True':
@@ -1239,6 +1384,9 @@ def main():
             weighted_mean_velocity_awcc, 'float64')
         writer.writeDataSet('bubbles/reynold_stresses_awcc', \
         mean_reynolds_stress_awcc, 'float64')
+        if interface_pairing_algo == "Kramer_et_al_2020":
+            writer.writeDataSet('bubbles/disparity', \
+            disparity_reconst, 'float64')
     ds_vel = writer.getDataSet('bubbles/velocity')
     # Add the attributes
     ds_vel.attrs['labels'] = ['Ux','Uy','Uz']
