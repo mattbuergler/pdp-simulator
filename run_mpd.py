@@ -68,7 +68,14 @@ if __name__ != "main":
         help="diretories that contain the functions (e.g. sbg.py, mssrc.py, etc.)",
     )
     parser.add_argument(
-        "-r", "--run", action="store_true", help="run the multi-phase-detection simulation"
+        "-r", "--run",
+        metavar="OPTION",
+        help="the following options are available:\n"
+        + "full        - timeseries and signal generation, signal processing and evaluation\n"
+        + "timeseries  - timeseries generation\n"
+        + "signal      - signal generation\n"
+        + "mssrc       - signal processing\n"
+        + "evaluation  - run evaluation (mostly figure plotting)",
     )
     parser.add_argument(
         "-p",
@@ -98,6 +105,7 @@ if __name__ != "main":
     start_time = time.time()
     errors = 0
     config = {}
+    config['run'] = args["run"]
     config['velocity_tsa'] = args["velocity_tsa"]
     config['ROC'] = args["ROC"]
     config['bin'] = args["bin"]
@@ -111,6 +119,8 @@ if __name__ != "main":
 
     runner.displayNumRuns()
     if args["run"]:
+        if not args["run"] in ["full", "timeseries", "signal", "mssrc", "evaluation"]:
+            PRINTERRORANDEXIT("Option <" + args["run"] + "> does not exist")
         error = runner.run()
         errors += error
 

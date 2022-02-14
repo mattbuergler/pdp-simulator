@@ -28,6 +28,7 @@ class Runner:
         self.roc = config['ROC']
         self.bin = config['bin']
         self.nthreads = config['nthreads']
+        self.tasks = config['run']
         self.runs = []  # type: typing.List[str]
 
 
@@ -58,17 +59,23 @@ class Runner:
         self.timings = []
         for runDirectory in self.runs:
             error = 0
-
-            self.setup(runDirectory)
-            t, error = self.runSBG(runDirectory)
-            errors += error
-            self.timings.append(t)
-            t, error = self.runRA(runDirectory)
-            errors += error
-            self.timings.append(t)
-            t, error = self.runEval(runDirectory)
-            errors += error
-            self.timings.append(t)
+            if self.tasks in ['full', 'timeseries']:
+                self.setup(runDirectory)
+                t, error = self.runSBG_ts(runDirectory)
+                errors += error
+                self.timings.append(t)
+            if self.tasks in ['full', 'signal']:
+                t, error = self.runSBG_sig(runDirectory)
+                errors += error
+                self.timings.append(t)
+            if self.tasks in ['full', 'mssrc']:
+                t, error = self.runRA(runDirectory)
+                errors += error
+                self.timings.append(t)
+            if self.tasks in ['full', 'evaluation']:
+                t, error = self.runEval(runDirectory)
+                errors += error
+                self.timings.append(t)
 
         return errors
 
@@ -96,11 +103,11 @@ class Runner:
         copy_files(directory / "input", directory / "run")
 
 
-    def runSBG(self, runDirectory: pathlib.Path):
+    def runSBG_ts(self, runDirectory: pathlib.Path):
         """
         run given simulation in given directory
         """
-        PRINTTITLE(" running SBG in %s " % str(runDirectory), "-")
+        PRINTTITLE(" running time series generation in %s " % str(runDirectory), "-")
         # get the filename of the runfile
         runfile = runDirectory / "run" / "config.json"
         # check for runfile
@@ -112,7 +119,29 @@ class Runner:
             str(pathlib.Path(self.bin) / "sbg.py")
         ]
         cmd.append("-r")
-        cmd.append('all')
+        cmd.append('timeseries')
+        cmd.append("-n")
+        cmd.append(self.nthreads)
+        cmd.append(".")
+        return self.runCommon(cmd, runDirectory, "a")
+
+    def runSBG_sig(self, runDirectory: pathlib.Path):
+        """
+        run given simulation in given directory
+        """
+        PRINTTITLE(" running signal generation in %s " % str(runDirectory), "-")
+        # get the filename of the runfile
+        runfile = runDirectory / "run" / "config.json"
+        # check for runfile
+        if not runfile.exists():
+            PRINTERRORANDEXIT("runfile <" + str(runfile) + "> does not exists")
+        # create simulation call
+        cmd = [
+            "python",
+            str(pathlib.Path(self.bin) / "sbg.py")
+        ]
+        cmd.append("-r")
+        cmd.append('signal')
         cmd.append("-n")
         cmd.append(self.nthreads)
         cmd.append(".")
@@ -129,10 +158,6 @@ class Runner:
         if not runfile.exists():
             PRINTERRORANDEXIT("runfile <" + str(runfile) + "> does not exists")
         # create simulation call
-        # get a velocity estimate
-        config = json.loads((runfile).read_bytes())
-        vel = np.asarray(config["FLOW_PROPERTIES"]["mean_velocity"])
-        mag_vel = np.sqrt(vel.dot(vel))
         cmd = [
             "python",
             str(pathlib.Path(self.bin) / "mssrc.py"),
