@@ -229,7 +229,7 @@ def evaluate_filtering(path, SPR, Rxymax, uinst):
     spr_ineq = np.linspace(0.0,1.0,1000)
     rmax_ineq = 0.4*(np.square(spr_ineq) + 1.0)
     fig, ax = plt.subplots(1,1,figsize=(4,2.88))
-    sc = plt.scatter(SPR,Rxymax,c=uinst,cmap='viridis')
+    sc = plt.scatter(SPR,Rxymax,c=uinst,cmap='viridis',vmin=0, vmax=20)
     plt.plot(spr_ineq,rmax_ineq,color='k')
     ax.set_ylabel(r'$R_{\mathrm{12},i,\mathrm{max}}$ [-]')
     ax.set_xlabel(r'SPR$_i$ [-]')
