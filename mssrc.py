@@ -686,7 +686,7 @@ def run_event_detection_kramer(args, aux_sensor_ids, sensor_ids, t_signal, signa
             if len(t_travel_k_pos) > 0:
                 idx_travel_k = np.where(t_travel_k == np.nanmin(t_travel_k_pos))
                 t_travel_k = t_travel_k[idx_travel_k]
-                disparity_k = abs((t0[3] - t_rise_fall_central_chord[idk][idx_travel_k,3])/t0[3])
+                disparity_k = abs((t0[3] - t_rise_fall_central_chord[idk][idx_travel_k,3])/t0[3])[0][0]
                 disparity['disparity'][k] = disparity_k
                 if (disparity_k < d_max) & (t_travel_k < t_travel_k_ip1[ii]):
                     ifd_times['t_2h'][k] = t_rise_fall_central_chord[idk][idx_travel_k,0][0][0]
@@ -1311,7 +1311,7 @@ def main():
         bubble_diam_reconst[ii,:] = bubble_props['diameter']
         if ((n_sensors >= 4) | (ra_type == "dual_tip_ED")):
             if (interface_pairing_algo == "Kramer_et_al_2020"):
-                disparity_reconst[ii,:] = bubble_props['disparity']
+                disparity_reconst[ii,:] = bubble_props['disparity'].ravel()
     # data filtering
     # ROC filtering, R12 and SPR filtering implemented in previous loop
     if args.ROC == 'True':

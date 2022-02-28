@@ -93,8 +93,11 @@ if __name__ != "main":
         metavar="OPTION",
         default="max",
         help="Filtering of velocity time series. The following options are available:\n"
-        + "awcc       - based on mean and RMS velocity from AWCC\n"
+        + "awcc_roc   - based on mean and RMS velocity from AWCC\n"
+        + "max_roc    - ROC based on mean from awcc and median deviation of velocity time series values larger than the mean.\n"
         + "max        - based on mean from awcc and standard deviation of velocity time series values larger than the mean.\n"
+        + "max_med    - based on mean from awcc and median deviation of velocity time series values larger than the mean.\n"
+        + "none       - no filtering.\n"
     )
     parser.add_argument('-tsa', '--velocity_tsa', action='store_true',
         help="Vizualize the results.", default=False)
