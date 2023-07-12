@@ -11,11 +11,13 @@ variables:
 
 .run-parallel-tests-template: &run-parallel-tests-template
   script:
-    - pipenv run python tests/runtests.py -n 4 -Cr tests/[0-9]*
+    - pipenv run python tests/runtests.py -n 2 -Cr tests/[0-9]*
 
 test-sequential:
   image: python:3.9.0
   stage: test
+    tags:
+      - sequential
   before_script:
     - apt-get update
     - /usr/local/bin/python -m pip install --upgrade pip
@@ -30,6 +32,8 @@ test-sequential:
 test-parallel:
   image: python:3.9.0
   stage: test
+    tags:
+      - parallel
   before_script:
     - apt-get update
     - /usr/local/bin/python -m pip install --upgrade pip
