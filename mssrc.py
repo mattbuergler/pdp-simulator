@@ -135,18 +135,18 @@ def windows(chord_air, chord_water, n_particles, f_sample, progress):
     chord_times = []
     # adaptive windows
     for ii in range(0,n_windows):
-        start[ii] = sum(chord_air[0:n_particles*(ii+1)])+sum(chord_water[1:n_particles*(ii+1)])
-        stop[ii] = sum(chord_air[0:n_particles*(ii+1)])+sum(chord_water[1:n_particles*(ii+1)])
+        start[ii] = np.sum(chord_air[:n_particles*(ii+1)]) + np.sum(chord_water[:n_particles*(ii+1)])
+        stop[ii] = np.sum(chord_air[:n_particles*(ii+1)]) + np.sum(chord_water[:n_particles*(ii+1)])
         chord_times.append(np.asarray(chord_air[n_particles*(ii):n_particles*(ii+1)])/f_sample)
         # Display progress
         if progress:
             printProgressBar(ii, n_windows, prefix = 'Progress:', suffix = 'Complete', length = 50)
 
     start = np.roll(start, 1)
-    start[0] = 0;                                           # first time window
-    stop[len(stop)-1] = sum(chord_water)+sum(chord_air)-1   #+1; #adding the last segment
+    start[0] = 0;                                  # first time window
+    stop[-1] = sum(chord_water)+sum(chord_air)-1   #+1; #adding the last segment
 
-    t = np.round((start+stop)/2.0)/f_sample                 #calculation of time window centres
+    t = np.round((start+stop)/2.0)/f_sample        #calculation of time window centres
 
     return n_windows,start,stop,t,chord_times
 
@@ -160,21 +160,16 @@ def velocity(n_lags, delta_x, f_sample, S1, S2):
         S1:                 binary signal of the trailing tip
         S2:                 binary signal of the trailing tip
     """
-
+    S1 = (S1 - np.mean(S1)) / (np.std(S1) * len(S1))
+    S2 = (S2 - np.mean(S2)) / (np.std(S2))
     # calculate cross-correlation
-    corr = signal.correlate(S2-np.mean(S2),S1-np.mean(S1))
-    # calculate auto-correlation for signal 1
-    auto_corr_S1 = signal.correlate(S1-np.mean(S1),S1-np.mean(S1))
-    # calculate auto-correlation for signal 2
-    auto_corr_S2 = signal.correlate(S2-np.mean(S2),S2-np.mean(S2))
+    corr = signal.correlate(S2,S1,mode='full')
     # check if some correlation detected
     if (sum(np.absolute(corr)) > 0.0):
         # normalize
-        corr = corr/math.sqrt(auto_corr_S1[n_lags-1]*auto_corr_S2[n_lags-1])
-        lags = signal.correlation_lags(len(S2), len(S1))
+        lags = signal.correlation_lags(len(S2), len(S1),mode='full')
         # convert to time domain
         tau = lags/f_sample
-
         # find peaks of the cross-correlation function
         pks = signal.find_peaks(corr)[0]
         prom = signal.peak_prominences(corr, pks)[0]
@@ -191,7 +186,6 @@ def velocity(n_lags, delta_x, f_sample, S1, S2):
             #otherwise second highest peak divided by the highest peak
             SPR = max(peaks[peaks<max(peaks)])/max(peaks)
             SPR_nofilter = max(peaks[peaks<max(peaks)])/max(peaks)
-
         # lag with max. cross-correlation coefficient
         lagsRxymax = np.argmax(corr)
         # maximum cross-correlation coefficient 
@@ -199,7 +193,7 @@ def velocity(n_lags, delta_x, f_sample, S1, S2):
         Rxymax_nofilter = corr[lagsRxymax]
         Vx_nofilter = (delta_x)/tau[lagsRxymax]
         # filtering based on SPRthres and Rxymaxthres
-        if  (Rxymax > ((SPR**2.0 + 1.0)*0.4)):              # length(lagsRxymax)==1
+        if  (Rxymax > ((SPR**2.0 + 1.0)*0.4)):        # length(lagsRxymax)==1
             # pseudo-instantaneous velocity (m/s)
             Vx = (delta_x)/tau[lagsRxymax]
         else:
