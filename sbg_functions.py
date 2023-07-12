@@ -379,14 +379,14 @@ def SBG_bubble_velocity(path, flow_properties, progress):
         # Drag coefficient
         C_d[ii,0] = max(24.0 * \
             inverse_den(Re_b[ii,0]) * phi,0.45)         # Drag coefficient
-        # du_dt = 1.0/dt * (u_f[ii,:]-u_f[ii-1,:])        # Time derivative of fluid velocity
+        du_dt = 1.0/dt * (u_f[ii,:]-u_f[ii-1,:])        # Time derivative of fluid velocity
         u_p[ii,:] = u_p[ii-1,:] + dt/(V_p*(rho_p + C_M*rho_f)) * ( \
                             # Drag force
                             0.5 * rho_f * math.pi * (d/2.0)**2.0 * u_r * np.abs(u_r) * C_d[ii,0] \
-        #                     # Acceleration force of fluid
-        #                     + rho_f * du_dt \
-        #                     # Added mass force
-        #                     + (C_M*rho_f) * du_dt \
+                            # Acceleration force of fluid
+                            + V_p * rho_f * du_dt \
+                            # Added mass force
+                            + (V_p * C_M*rho_f) * du_dt \
                         )
         # Calculate trajectory
         x_p[ii,:] = x_p[ii-1,:] + (u_p[ii,:]+u_p[ii-1,:])/2.0*dt;
