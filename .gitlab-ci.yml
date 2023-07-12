@@ -16,8 +16,8 @@ variables:
 test-sequential:
   image: python:3.9.0
   stage: test
-    tags:
-      - sequential
+  tags:
+    - sequential
   before_script:
     - apt-get update
     - /usr/local/bin/python -m pip install --upgrade pip
@@ -32,8 +32,8 @@ test-sequential:
 test-parallel:
   image: python:3.9.0
   stage: test
-    tags:
-      - parallel
+  tags:
+    - parallel
   before_script:
     - apt-get update
     - /usr/local/bin/python -m pip install --upgrade pip
