@@ -14,7 +14,7 @@ variables:
     - pipenv run python tests/runtests.py -n 2 -Cr tests/[0-9]*
 
 test-sequential:
-  image: python:3.9.0
+  image: python:3.11.4
   stage: test
   tags:
     - sequential
@@ -30,7 +30,7 @@ test-sequential:
 
 
 test-parallel:
-  image: python:3.9.0
+  image: python:3.11.4
   stage: test
   tags:
     - parallel
