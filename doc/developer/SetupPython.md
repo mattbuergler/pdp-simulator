@@ -32,7 +32,13 @@ eval "$(pyenv virtualenv-init -)"
 ```shell
 pyenv install -v 3.9.0
 ```
+**Upgrade pyenv**
 
+```shell
+
+cd $(pyenv root)
+git pull
+```
 ### Install *pipenv*
 https://realpython.com/pipenv-guide/
 
