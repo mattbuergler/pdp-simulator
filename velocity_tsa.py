@@ -56,6 +56,11 @@ def main(args):
     u_p = reader.getDataSet('bubbles/velocity')[:]
     # Read the time vector
     t_p = reader.getDataSet('bubbles/time')[:]
+    # Read the time vector
+    Re = reader.getDataSet('bubbles/Re_bubble')[:]
+    # Read the time vector
+    C_d = reader.getDataSet('bubbles/C_d')[:]
+
     # Read the configuration data
     flow_props = json.loads(reader.getDataSet('.flow_properties')[0][0].decode( \
             "ascii").replace("'",'"'))
@@ -64,6 +69,51 @@ def main(args):
     directions = ['x','y','z']
     total_duration = t_f[-1]-t_f[0]
     ts_frequency = int((len(t_f)-1)/total_duration)
+
+    for ii,k in enumerate(['x','y','z']):
+        fs2=10
+        T_L = flow_props['integral_timescale']
+        T_I = flow_props['turbulent_intensity']
+        U_m = flow_props['mean_velocity']
+        # Plot velocity time series
+        color = [0.2,0.2,0.2]
+        lw = 0.75
+        fig = plt.figure(figsize=(4.5,2.5))
+        plt.plot(t_p,u_p[:,ii],color='r',lw=lw,ls='--',label='disp.')
+        plt.plot(t_f,u_f[:,ii],color='k',lw=lw,label='cont.')
+        plt.ylabel(f'$u_{k}$ [m/s]')
+        plt.xlabel('time $t$ [s]')
+        plt.xlim([0,flow_props['duration']])
+        plt.ylim([min(np.nanmin(u_f[:,ii]),np.nanmin(u_p[:,ii])),max(np.nanmax(u_f[:,ii]),np.nanmax(u_p[:,ii]))])
+        plt.title(r'$T_{{I,{}}}$ = {:.3f}, $T_{{L,{}}}$ = {:.4f}s'.format( \
+                            k, \
+                            T_I[ii], \
+                            k, \
+                            T_L[ii], \
+                            1.0/ts_frequency,
+                            k, \
+                            int(T_L[ii]*ts_frequency)), \
+                    fontsize=fs2)
+        plt.grid(which='major', axis='both')
+        plt.legend(loc=2, ncol=2)
+        plt.tight_layout()
+        fig.savefig(path / f'velocity_{k}_ts.svg',dpi=300)
+
+    data = pd.DataFrame(Re,columns=['Re'])
+    data['C_d'] = C_d
+    data = data.sort_values(by=['Re'])
+    data = data[data['Re'] > 0]
+    fig = plt.figure(figsize=(4.5,2.5))
+    plt.plot(data['Re'],data['C_d'])
+    plt.xlabel(f'$Re_b$ [-]')
+    plt.ylabel('$C_d$ [-]')
+    plt.yscale('log')
+    plt.xscale('log')
+    plt.ylim([0.1,10])
+    plt.grid(which='major', axis='both')
+    plt.tight_layout()
+    fig.savefig(path / f'Cd_vs_Re.svg',dpi=300)
+    sys.exit()
 
     # Accelrations for various sampling frequencies
     fs1=7

@@ -350,7 +350,9 @@ def SBG_bubble_velocity(path, flow_properties, progress):
 
     # Initialize velocity time series and trajectory of the bubble
     u_p = np.empty((len(u_f),3)) * np.nan
-    x_p = np.empty((len(u_f),3)) * np.NaN
+    x_p = np.empty((len(u_f),3)) * np.nan
+    Re_b = np.ones((len(u_f),1)) * 0.0
+    C_d = np.ones((len(u_f),1)) * 0.45
 
     # Set initial conditions: u_p(t=0) = u_f(t=0) 
     u_p[0,:] = u_f[0,:]
@@ -370,23 +372,24 @@ def SBG_bubble_velocity(path, flow_properties, progress):
     d = get_mean_bubble_sve_size(flow_properties)
     V_p = math.pi/6.0*d**3.     # sphere volume
     for ii in range(1, len(t_f)):
-        dt = t_f[ii] - t_f[ii-1]            # Integration time step
-        u_r = u_f[ii-1,:] - u_p[ii-1,:]     # Rel. velocity of prev. timestep
-        Re = rho_f*abs(u_r)*d/mu_f          # Bubble Reynolds number
-        phi = 1.0 + 0.15*(Re**0.687)        # Drag coefficient * Re / 24
-        du_dt = 1.0/dt * (u_f[ii,:]
-                        -u_f[ii-1,:])       # Time derivative of fluid velocity
+        dt = t_f[ii] - t_f[ii-1]                        # Integration time step
+        u_r = u_f[ii-1,:] - u_p[ii-1,:]                 # Rel. velocity of prev. timestep
+        Re_b[ii,0] = rho_f*np.linalg.norm(u_r)*d/mu_f   # Bubble Reynolds number
+        phi = 1.0 + 0.15*(Re_b[ii,0]**0.687)            # Drag coefficient * Re / 24
+        # Drag coefficient
+        C_d[ii,0] = max(24.0 * \
+            inverse_den(Re_b[ii,0]) * phi,0.45)         # Drag coefficient
+        du_dt = 1.0/dt * (u_f[ii,:]-u_f[ii-1,:])        # Time derivative of fluid velocity
         u_p[ii,:] = u_p[ii-1,:] + dt/(V_p*(rho_p + C_M*rho_f)) * ( \
                             # Drag force
-                            piTimes3 * mu_f * d * u_r * phi \
-        #                     # Acceleration force of fluid
-        #                     + rho_f * du_dt \
-        #                     # Added mass force
-        #                     + (C_M*rho_f) * du_dt \
+                            0.5 * rho_f * math.pi * (d/2.0)**2.0 * u_r * np.abs(u_r) * C_d[ii,0] \
+                            # Acceleration force of fluid
+                            # + V_p * rho_f * du_dt \
+                            # Added mass force
+                            # + (V_p * C_M*rho_f) * du_dt \
                         )
         # Calculate trajectory
         x_p[ii,:] = x_p[ii-1,:] + (u_p[ii,:]+u_p[ii-1,:])/2.0*dt;
-
     # Calculate the statistics
     # Calculate mean velocity
     u_p_m = u_p.mean(axis=0)
@@ -419,6 +422,10 @@ def SBG_bubble_velocity(path, flow_properties, progress):
         mean_reynolds_stress, 'float64')
     writer.writeDataSet('bubbles/turbulent_intensity', \
         turbulent_intensity, 'float64')
+    writer.writeDataSet('bubbles/Re_bubble', \
+        Re_b, 'float64')
+    writer.writeDataSet('bubbles/C_d', \
+        C_d, 'float64')
     writer.close()
     time2 = time.time()
     print(f'Successfully written bubble velocity time series and trajectory')
