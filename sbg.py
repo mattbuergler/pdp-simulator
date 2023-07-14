@@ -87,10 +87,13 @@ def main():
             reproducible=config['REPRODUCIBLE'],
             progress=args.progress
         )
-        sbg_functions.SBG_bubble_velocity(
+        sbg_functions.SBG_bubble_generator(
             path=path,
             flow_properties=config['FLOW_PROPERTIES'],
-            progress=args.progress
+            probe=config['PROBE'],
+            reproducible=config['REPRODUCIBLE'],
+            progress=args.progress,
+            nthreads=int(args.nthreads)
         )
     if command in ["signal", 'all']:
         print('Synthetic Signal Generator (SSG)\n')

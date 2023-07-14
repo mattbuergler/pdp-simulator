@@ -9,6 +9,7 @@ import math
 from joblib import Parallel, delayed
 from pathlib import Path
 import shutil
+import scipy
 
 try:
     from dataio.H5Writer import H5Writer
@@ -43,25 +44,31 @@ def SBG_dt_corr(Uprev, Um, sigma, Ti, dt, R):
     U = Um + unew;
     return U
 
-def get_bubble_size(flow_properties):
+def get_bubble_size(flow_properties, F):
+    """Produces a vector with bubble sizes
+
+        Parameters
+        ----------
+        flow_properties   (dict): A dictionary containing the flow properties
+        F                 (dict): The bubble frequency
+
+        Returns
+        ----------
+        nb        (float): The number of bubbles
+        b_size (np.array): A vector with bubble size
+    """
+
     # Define some variables for easier use
-    Um = np.asarray(flow_properties['mean_velocity'])
-    C = flow_properties['void_fraction']
     tau = flow_properties['duration'];
     # Get bubble properties
     bubbles = flow_properties['bubbles']
     if bubbles['shape'] == 'sphere':
         if bubbles['size_distribution'] == 'constant':
-            # Mean bubble frequency
-            F = 1.5 * C * np.linalg.norm(Um) / (bubbles['diameter'])
             # Number of simulated bubbles
             nb = round(F * tau)
             # Vector with bubble size (A,B,C), V = 1/6*Pi*A*B*C
             b_size = np.ones((nb,3))*bubbles['diameter']
         elif bubbles['size_distribution'] == 'lognormal':
-            # Mean bubble frequency
-            F = 1.5 * C * np.linalg.norm(Um)  \
-                / math.exp(bubbles['mean_ln_diameter']+0.5*bubbles['sd_ln_diameter']**2)
             # Number of simulated bubbles
             nb = round(F * tau)
             # Sample lognormal distribution
@@ -167,17 +174,48 @@ def get_bubble_size(flow_properties):
                     B[ii] = (d**3 / E)**(1.0/3.0)
                     A[ii] = E * B[ii]
                 b_size = np.array([A,B,B]).T
-    return nb, F, b_size
+    return nb, b_size
 
 def get_mean_bubble_sve_size(flow_properties):
-    # Returns mean sphere-volume-equivalent bubble size D_sve
+    """Calculate mean sphere-volume-equivalent bubble size D_sve
+
+        Parameters
+        ----------
+        flow_properties   (dict): A dictionary containing the flow properties
+
+        Returns
+        ----------
+        d_sve     (float): Mean sphere-volume-equivalent bubble size D_sve
+    """
+
     # Get bubble properties
     bubbles = flow_properties['bubbles']
     if bubbles['size_distribution'] == 'constant':
-        D_sve = bubbles['diameter']
+        d_sve = bubbles['diameter']
     elif bubbles['size_distribution'] == 'lognormal':
-        D_sve = math.exp(bubbles['mean_ln_diameter']+0.5*bubbles['sd_ln_diameter']**2)
-    return D_sve
+        d_sve = math.exp(bubbles['mean_ln_diameter']+0.5*bubbles['sd_ln_diameter']**2)
+    return d_sve
+
+def get_max_bubble_sve_size(flow_properties):
+    """Calculate the 99.5-percentile sphere-volume-equivalent bubble size d_max
+
+        Parameters
+        ----------
+        flow_properties   (dict): A dictionary containing the flow properties
+
+        Returns
+        ----------
+        d_max     (float): 99.5-percentile sphere-volume-equivalent bubble size
+    """
+    # Get bubble properties
+    bubbles = flow_properties['bubbles']
+    d_max = math.nan
+    if bubbles['size_distribution'] == 'constant':
+        d_max = bubbles['diameter']
+    elif bubbles['size_distribution'] == 'lognormal':
+        # Get 99.5-percentile from log-normal distribution
+        d_max = scipy.stats.lognorm.ppf(0.995, s=bubbles['sd_ln_diameter'],scale=bubbles['mean_ln_diameter'])
+    return d_max
 
 def SBG_fluid_velocity(path, flow_properties, reproducible, progress):
     """SBG including correlation between u' and v' as well as autocorrelation
@@ -323,20 +361,37 @@ def SBG_fluid_velocity(path, flow_properties, reproducible, progress):
     print(f'Successfully written fluid velocity time series and trajectory')
     print(f'Finished in {time2-time1:.2f} seconds\n')
 
-def SBG_bubble_velocity(path, flow_properties, progress):
-    """Calculate the bubble velocity based on a force balance equation between drag and virtual mass acting on the bubble by the fluid.
+def SBG_bubble_generator(
+    path,
+    flow_properties,
+    probe,
+    reproducible,
+    progress,
+    nthreads):
+
+    """ Generate the bubble field and calculate bubble trajectories
 
         Parameters
         ----------
         path      (pathlib.Path): The directory
         flow_properties   (dict): A dictionary containing the flow properties
+        probe             (dict): A dictionary containing the probe properties
+        reproducible    (string): A string defining the reproducibility
         progress          (bool): A flag to print the progress
+        nthreads           (int): Number of jobs to start for parallel runs
 
         Returns
         ----------
         -
     """
+
     time1 = time.time()
+
+    # Determine the reproducability of the generated bubble field
+    # If reproducible, the fix seed of random generator
+    if reproducible == 'yes':
+        np.random.seed(42)
+        random.seed(42)
 
     # Create a H5-file reader
     reader = H5Reader(path / 'flow_data.h5')
@@ -344,89 +399,117 @@ def SBG_bubble_velocity(path, flow_properties, progress):
     t_f = reader.getDataSet('fluid/time')[:]
     # Read the fluid velocity
     u_f = reader.getDataSet('fluid/velocity')[:]
+    # Read the fluid velocity
+    x_f = reader.getDataSet('fluid/trajectory')[:]
     reader.close()
+
+    # Gather the probe information (id and relative location [=delta])
+    n_sensors = len(probe['sensors'])
+    # Initialize an empty dictionary
+    sensor_delta = {}
+    for sensor in probe['sensors']:
+        # fill dictionary:  id -> relative_location
+        sensor_delta[sensor['id']] = np.asarray(sensor['relative_location'])
+    # Get an estimate of the maximum probe dimension
+    sensors = probe['sensors']
+    min_range = np.array([LARGENUMBER,LARGENUMBER,LARGENUMBER])
+    max_range = np.array([LARGENEGNUMBER,LARGENEGNUMBER,LARGENEGNUMBER])
+
+    for sensor in sensors:
+        for ii in range(0,3):
+            min_range[ii] = min(min_range[ii], sensor['relative_location'][ii])
+            max_range[ii] = max(max_range[ii], sensor['relative_location'][ii])
+    
+    max_probe_size = max_range - min_range
+
+    # Determine control volume (CV) size
+    # get the mean sphere-volume-equivalent bubble diameter
+    d = get_mean_bubble_sve_size(flow_properties)
+    # get max bubble size
+    d_max = get_max_bubble_sve_size(flow_properties)
+    # width
+    CV_w = 5*d_max + max(max_probe_size[1],max_probe_size[2])
+    # length
+    CV_l = 2*d_max + max_probe_size[0]
+    # area
+    CV_a = CV_w**2
+
+    # Define some variables for easier use
+    um = np.asarray(flow_properties['mean_velocity'])
+    C = flow_properties['void_fraction']
+    # Calculate bubble frequency
+    # F = C*U*CV_a/V_b
+    F = C*np.linalg.norm(um)*CV_a/(math.pi/6*d**3)
+
+    # Get number of bubbles and array with bubble size
+    nb, b_size = get_bubble_size(flow_properties, F)
+
+    # Inter-arrival time (time between two bubbles)
+    # ASSUMPTION: equally spaced (in time) bubble distribution
+    # iat = 1.0/F - db/np.linalg.norm(um)
+    inter_arrival_time = 1.0/F
+    # Initialize arrival time (at) vector
+    arrival_times = np.linspace(0,(nb-1)*inter_arrival_time,nb)
+
+    # Get the random probe displacement at control volume edge
+    displacement = np.transpose(np.array([np.zeros(nb),
+                                    np.random.uniform(-CV_w/2.0,CV_w/2.0,nb),
+                                    np.random.uniform(-CV_w/2.0,CV_w/2.0,nb)]))
 
     print('\nGenerating velocity and trajectory time series of the bubbles\n')
 
-    # Initialize velocity time series and trajectory of the bubble
-    u_p = np.empty((len(u_f),3)) * np.nan
-    x_p = np.empty((len(u_f),3)) * np.nan
-    Re_b = np.ones((len(u_f),1)) * 0.0
-    C_d = np.ones((len(u_f),1)) * 0.45
-
-    # Set initial conditions: u_p(t=0) = u_f(t=0) 
-    u_p[0,:] = u_f[0,:]
-    x_p[0,:] = 0.0
-    # Solve momentum equation for bubble velocity with a first order Euler
-    # scheme. The forces acting on the bubble are given by Eq. 5 in 
-    # Balachandar, S., & Eaton, J. K. (2010). Turbulent dispersed multiphase
-    # flow. Annual review of fluid mechanics, 42, 111-133.
-    # https://doi.org/10.1146/annurev.fluid.010908.165243
-    # Some parameters
-    C_M = 0.5                   # virtual mass coefficient (Rushe, 2002)
-    rho_f = 1000.0              # density of the fluid [kg/m3]
-    rho_p = 1.0                 # density of the bubble [kg/m3]
-    mu_f = 0.001                # dyn. viscosity of the fluid [Pa*s]
-    piTimes3 = 3.0 * math.pi    # 3 * Pi
-    # get the mean sphere-volume-equivalent bubble diameter
-    d = get_mean_bubble_sve_size(flow_properties)
-    V_p = math.pi/6.0*d**3.     # sphere volume
-    for ii in range(1, len(t_f)):
-        dt = t_f[ii] - t_f[ii-1]                        # Integration time step
-        u_r = u_f[ii-1,:] - u_p[ii-1,:]                 # Rel. velocity of prev. timestep
-        Re_b[ii,0] = rho_f*np.linalg.norm(u_r)*d/mu_f   # Bubble Reynolds number
-        phi = 1.0 + 0.15*(Re_b[ii,0]**0.687)            # Drag coefficient * Re / 24
-        # Drag coefficient
-        C_d[ii,0] = max(24.0 * \
-            inverse_den(Re_b[ii,0]) * phi,0.45)         # Drag coefficient
-        du_dt = 1.0/dt * (u_f[ii,:]-u_f[ii-1,:])        # Time derivative of fluid velocity
-        u_p[ii,:] = u_p[ii-1,:] + dt/(V_p*(rho_p + C_M*rho_f)) * ( \
-                            # Drag force
-                            0.5 * rho_f * math.pi * (d/2.0)**2.0 * u_r * np.abs(u_r) * C_d[ii,0] \
-                            # Acceleration force of fluid
-                            # + V_p * rho_f * du_dt \
-                            # Added mass force
-                            # + (V_p * C_M*rho_f) * du_dt \
-                        )
-        # Calculate trajectory
-        x_p[ii,:] = x_p[ii-1,:] + (u_p[ii,:]+u_p[ii-1,:])/2.0*dt;
-    # Calculate the statistics
-    # Calculate mean velocity
-    u_p_m = u_p.mean(axis=0)
-    # Initialize the reynolds stress tensors time series
-    reynolds_stress = np.empty((len(u_p),3,3))
-    for ii in range(0,len(u_p)):
-        # Calculate velocity fluctuations
-        u_p_prime = u_p[ii,:]-u_p_m
-        # Reynolds stresses as outer product of fluctuations
-        reynolds_stress[ii,:,:] = np.outer(u_p_prime, u_p_prime)
-    # Calculate mean Reynolds stresses
-    mean_reynolds_stress = reynolds_stress.mean(axis=0)
-    # Calculate turbulent intensity with regard to mean x-velocity
-    turbulent_intensity = np.sqrt(np.array([
-            mean_reynolds_stress[0,0], \
-            mean_reynolds_stress[1,1], \
-            mean_reynolds_stress[2,2], \
-            ])) / np.sqrt(u_p_m.dot(u_p_m))
-    # Create the H5-file writer
-    writer = H5Writer(path / 'flow_data.h5', 'a')
-    # Write the time vector
-    writer.writeDataSet('bubbles/time', t_f, 'float64')
-    # Write the velocity time series
-    writer.writeDataSet('bubbles/velocity', u_p, 'float64')
-    # Write the trajectory
-    writer.writeDataSet('bubbles/trajectory', x_p, 'float64')
-    writer.writeDataSet('bubbles/mean_velocity', \
-        u_p_m, 'float64')
-    writer.writeDataSet('bubbles/reynold_stresses', \
-        mean_reynolds_stress, 'float64')
-    writer.writeDataSet('bubbles/turbulent_intensity', \
-        turbulent_intensity, 'float64')
-    writer.writeDataSet('bubbles/Re_bubble', \
-        Re_b, 'float64')
-    writer.writeDataSet('bubbles/C_d', \
-        C_d, 'float64')
-    writer.close()
+    for ib in range(0,nb):
+        # get arrival time of bubble
+        at = arrival_times[ib]
+        # time index
+        at_idx = find_nearest_idx(t_f,at)
+        # get exit time index of bubble
+        et_idx = at_idx + len(x_f[at_idx::,0][(x_f[at_idx::,0]-x_f[at_idx,0]) <= CV_l])
+        # bubble time in control volume
+        t_b = t_f[at_idx:et_idx]
+        # bubble trajectory = displacement + fluid trajectory after arrival time
+        x_p = displacement[ib,:] + x_f[at_idx:et_idx,:]
+        print(len(x_p))
+        # get bubble velocity
+        # assuming no-slip:
+        # bubble velocity = fluid velocity after arrival time
+        u_p = u_f[at_idx:et_idx]
+        # Calculate the statistics
+        # Calculate mean velocity
+        u_p_m = u_p.mean(axis=0)
+        # Initialize the reynolds stress tensors time series
+        reynolds_stress = np.empty((len(u_p),3,3))
+        for ii in range(0,len(u_p)):
+            # Calculate velocity fluctuations
+            u_p_prime = u_p[ii,:]-u_p_m
+            # Reynolds stresses as outer product of fluctuations
+            reynolds_stress[ii,:,:] = np.outer(u_p_prime, u_p_prime)
+        # Calculate mean Reynolds stresses
+        mean_reynolds_stress = reynolds_stress.mean(axis=0)
+        # Calculate turbulent intensity with regard to mean x-velocity
+        turbulent_intensity = np.sqrt(np.array([
+                mean_reynolds_stress[0,0], \
+                mean_reynolds_stress[1,1], \
+                mean_reynolds_stress[2,2], \
+                ])) / np.sqrt(u_p_m.dot(u_p_m))
+        # Create the H5-file writer
+        writer = H5Writer(path / 'flow_data.h5', 'a')
+        # Create the velocity data set for the entire time series of length n
+        writer.writeDataSet(f'bubbles/{ib:07d}/arrival_time', at, 'float64')
+        writer.writeDataSet(f'bubbles/{ib:07d}/size', b_size[ib,:], 'float64')
+        # Write the time vector
+        writer.writeDataSet(f'bubbles/{ib:07d}/time', t_b, 'float64')
+        # Write the velocity time series
+        writer.writeDataSet(f'bubbles/{ib:07d}/velocity', u_p, 'float64')
+        # Write the trajectory
+        writer.writeDataSet(f'bubbles/{ib:07d}/trajectory', x_p, 'float64')
+        writer.writeDataSet(f'bubbles/{ib:07d}/mean_velocity', \
+            u_p_m, 'float64')
+        writer.writeDataSet(f'bubbles/{ib:07d}/reynold_stresses', \
+            mean_reynolds_stress, 'float64')
+        writer.writeDataSet(f'bubbles/{ib:07d}/turbulent_intensity', \
+            turbulent_intensity, 'float64')
+        writer.close()
     time2 = time.time()
     print(f'Successfully written bubble velocity time series and trajectory')
     print(f'Finished in {time2-time1:.2f} seconds\n')
@@ -544,44 +627,7 @@ def SBG_signal(
         np.random.seed(42)
         random.seed(42)
 
-    # Create a H5-file reader
-    reader = H5Reader(path / 'flow_data.h5')
-    # Read the time vector
-    t_traj = reader.getDataSet('bubbles/time')[:]
-    # Read the trajectory
-    X = reader.getDataSet('bubbles/trajectory')[:]
-    reader.close()
-    # Duration of the time series
-    duration = t_traj[-1] - t_traj[0]
-    # Number of velocity realizations
-    n = len(t_traj)
 
-    # Define some variables for easier use
-    um = np.asarray(flow_properties['mean_velocity'])
-    C = flow_properties['void_fraction']
-
-    # Get number of bubbles, bubble frequency and array with bubble size
-    nb, F, b_size = get_bubble_size(flow_properties)
-
-    # Inter-arrival time (time between two bubbles)
-    # ASSUMPTION: equally spaced (in time) bubble distribution
-    # iat = 1.0/F - db/np.linalg.norm(um)
-    iat = np.ones(nb)*1.0/F
-    # Initialize arrival time (AT) vector
-    AT = np.zeros(len(iat))
-    for kk in range(1,len(iat)):
-        AT[kk] = AT[kk-1] + iat[kk];
-
-    # Get the random probe displacement with regard to the center of the bubble
-    X_rand = np.transpose(np.array([np.random.uniform(-b_size[:,1]/2.0,b_size[:,1]/2.0),
-                                    np.random.uniform(-b_size[:,2]/2.0,b_size[:,2]/2.0)]))
-
-    # Create the H5-file writer
-    writer = H5Writer(path / 'flow_data.h5', 'a')
-    # Create the velocity data set for the entire time series of length n
-    writer.writeDataSet('bubbles/arrival_time', AT, 'float64')
-    writer.writeDataSet('bubbles/size', b_size, 'float64')
-    writer.close()
 
     # Gather the probe information (id and relative location [=delta])
     n_sensors = len(probe['sensors'])
