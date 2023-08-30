@@ -133,6 +133,7 @@ def windows(chord_air, chord_water, n_particles, f_sample, progress):
     start = np.empty((n_windows),dtype='int')
     stop = np.empty((n_windows),dtype='int')
     chord_times = []
+    t = []
     # adaptive windows
     for ii in range(0,n_windows):
         start[ii] = np.sum(chord_air[:n_particles*(ii+1)]) + np.sum(chord_water[:n_particles*(ii+1)])
@@ -141,12 +142,12 @@ def windows(chord_air, chord_water, n_particles, f_sample, progress):
         # Display progress
         if progress:
             printProgressBar(ii, n_windows, prefix = 'Progress:', suffix = 'Complete', length = 50)
+    if n_windows > 0:
+        start = np.roll(start, 1)
+        start[0] = 0;                                  # first time window
+        stop[-1] = sum(chord_water)+sum(chord_air)-1   #+1; #adding the last segment
 
-    start = np.roll(start, 1)
-    start[0] = 0;                                  # first time window
-    stop[-1] = sum(chord_water)+sum(chord_air)-1   #+1; #adding the last segment
-
-    t = np.round((start+stop)/2.0)/f_sample        #calculation of time window centres
+        t = np.round((start+stop)/2.0)/f_sample        #calculation of time window centres
 
     return n_windows,start,stop,t,chord_times
 
@@ -323,6 +324,7 @@ def run_sig_proc_awcc(path, args, config, sensor_ids, t_signal, signal):
     # chord length [s] = chord length / f_sample
     print('Determining the air and water chord.\n')
     chord_w,chord_a,F1 = chord(signal[:,0],duration, progress=args.progress)
+
     print('Determining the windows.\n')
     n_windows,start,stop,t,chord_times = windows(chord_a,chord_w,n_particles,f_sample, progress=args.progress)
     results = Parallel(n_jobs=int(args.nthreads),backend='multiprocessing')(delayed(calc_velocity_awwcc)(ii, start, stop, signal, f_sample, delta_x, args) for ii in range(0,n_windows))
@@ -352,6 +354,7 @@ def run_sig_proc_awcc(path, args, config, sensor_ids, t_signal, signal):
         bubble_props['velocity'] = u
         bubble_props['diameter'] = np.array([0.0, 0.0])
         bubble_props['chord_times'] = np.asarray(chord_times[ii])
+        bubble_props['bubble_frequency'] = F1
         bubble_props['if_norm_unit_vecs'] = [np.array([0.0, 0.0, 0.0]), \
                                             np.array([0.0, 0.0, 0.0])]
         bubbles.append(bubble_props)
@@ -1345,20 +1348,22 @@ def main():
             mean_reynolds_stress[2,2], \
             ])) / np.sqrt(weighted_mean_velocity_reconst.dot(weighted_mean_velocity_reconst))
 
-    chord_lengths = []
+    chord_lengths_inst_u = []
+    chord_lengths_mean_u = []
     chord_times = []
     if ra_type == "dual_tip_AWCC":
         # calculate chord lengths based on instantaneous velocities
         for ii,bubble_props in enumerate(bubbles_complete):
             if np.isnan(bubble_props['velocity'][0]):
-                chord_lengths.append(np.asarray(bubble_props['chord_times']*weighted_mean_velocity_reconst[0]))
+                chord_lengths_mean_u.append(np.asarray(bubble_props['chord_times']*weighted_mean_velocity_reconst[0]))
             else:
-                chord_lengths.append(np.asarray(bubble_props['chord_times']*bubble_props['velocity'][0]))
+                chord_lengths_inst_u.append(np.asarray(bubble_props['chord_times']*bubble_props['velocity'][0]))
             chord_times.append(bubble_props['chord_times'])
-        chord_lengths = np.asarray(chord_lengths).flatten()
+        chord_lengths_inst_u = np.asarray(chord_lengths_inst_u).flatten()
+        chord_lengths_mean_u = np.asarray(chord_lengths_mean_u).flatten()
         chord_times = np.asarray(chord_times).flatten()
-        bubble_diam_reconst = np.asarray(chord_lengths)
-
+        bubble_diam_reconst = np.asarray(chord_lengths_inst_u)
+        bubble_frequency = bubble_props['bubble_frequency']
     print('\nSaving results....\n')
     # Create the H5-file writer
     writer = H5Writer(path / 'reconstructed.h5', 'w')
@@ -1387,8 +1392,10 @@ def main():
     # Create the dataset for the bubble diameter
     writer.writeDataSet('bubbles/diameters', bubble_diam_reconst, 'float64')
     if ra_type == "dual_tip_AWCC":
-        writer.writeDataSet('bubbles/chord_lengths', chord_lengths, 'float64')
+        writer.writeDataSet('bubbles/chord_lengths_inst_vel', chord_lengths_inst_u, 'float64')
+        writer.writeDataSet('bubbles/chord_lengths_mean_vel', chord_lengths_mean_u, 'float64')
         writer.writeDataSet('bubbles/chord_times', chord_times, 'float64')
+        writer.writeDataSet('bubbles/bubble_frequency', bubble_frequency, 'float64')
     # Create the IAC and void_fraction datasets
     writer.writeDataSet('IAC', np.array([IAC],dtype='float64'), 'float64')
     writer.writeDataSet('voidFraction', np.array([np.mean(signal[:,0])]), 'float64')
