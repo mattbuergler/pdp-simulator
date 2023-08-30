@@ -214,12 +214,36 @@ def get_max_bubble_sve_size(flow_properties):
         d_max = bubbles['diameter']
     elif bubbles['size_distribution'] == 'lognormal':
         # Get 99.5-percentile from log-normal distribution
-        d_max = scipy.stats.lognorm.ppf(0.995, s=bubbles['sd_ln_diameter'],scale=bubbles['mean_ln_diameter'])
+        d_max = scipy.stats.lognorm.ppf(0.995, s=bubbles['sd_ln_diameter'],scale=math.exp(bubbles['mean_ln_diameter']))
     return d_max
 
+def get_perc_bubble_sve_size(flow_properties, percentile):
+    """Calculate the sphere-volume-equivalent bubble size d_percentile for given
+    percentile.
+
+        Parameters
+        ----------
+        flow_properties    (dict): A dictionary containing the flow properties
+        percentile        (float): percentile of the bubble size
+
+        Returns
+        ----------
+        d_percentile      (float): sphere-volume-equivalent bubble size for given percentile
+    """
+    # Get bubble properties
+    bubbles = flow_properties['bubbles']
+    d_percentile = math.nan
+    if bubbles['size_distribution'] == 'constant':
+        d_percentile = bubbles['diameter']
+    elif bubbles['size_distribution'] == 'lognormal':
+        # Get 99.5-percentile from log-normal distribution
+        d_percentile = scipy.stats.lognorm.ppf(percentile, s=bubbles['sd_ln_diameter'],scale=math.exp(bubbles['mean_ln_diameter']))
+    return d_percentile
+
 def SBG_fluid_velocity(path, flow_properties, reproducible, progress):
-    """SBG including correlation between u' and v' as well as autocorrelation
-    in u(t) depending on integral time scale.
+    """Generate stochastic fluid velocity time series including correlation
+    between u' and v' as well as autocorrelation in u(t) depending
+    on integral time scale.
 
         Parameters
         ----------
@@ -383,19 +407,35 @@ def SBG_get_signal_traj(
     x_interp = x_interp.drop(index=t_p_del)
     return x_interp.index, x_interp.values
 
-def get_bubble_properties(at,t_f,x_f,u_f,control_volume_size):
+def get_bubble_properties(at,ax,t_f,x_f,u_f,control_volume_size):
+    """ Returns the bubble properties.
+
+        Parameters
+        ----------
+        at                  (np.array): The bubble arrival time
+        ax                  (np.array): The bubble arrival location
+        t_f                 (np.array): Fluid time vector
+        x_f                 (np.array): Fluid trajectory vector
+        u_f                 (np.array): Fluid velocity vector
+        control_volume_size (np.array): The control volume size (x,y,z)
+
+        Returns
+        ----------
+        bubble_props (dict): A dictionary with bubble properties
+    """
+
     # time index
-    at_idx = find_nearest_idx(t_f,at)
+    at_idx = find_nearest_smaller_idx(t_f,at)
     # get exit time index of bubble
-    et_idx = at_idx + len(x_f[at_idx::,0][(x_f[at_idx::,0]-x_f[at_idx,0]) <= control_volume_size[0]])
+    et_idx = at_idx + len(x_f[at_idx::,0][(x_f[at_idx::,0]-x_f[at_idx,0]) <= control_volume_size[0]]) + 1
     if et_idx >= len(t_f):
         et_idx = len(t_f)-1
     # bubble time in control volume
-    t_p = t_f[at_idx:et_idx]
+    t_p = t_f[at_idx:et_idx] + (at - t_f[at_idx])
     # bubble trajectory = deplacement + fluid trajectory after arrival time
     x_p = np.array([-control_volume_size[0]/2.0,
-                    random.uniform(-control_volume_size[1]/2.0,control_volume_size[1]/2.0),
-                    random.uniform(-control_volume_size[1]/2.0,control_volume_size[1]/2.0)]) \
+                    ax[0],
+                    ax[1]]) \
         + (x_f[at_idx:et_idx,:] - x_f[at_idx,:])
     # get bubble velocity
     # assuming no-slip:
@@ -429,7 +469,8 @@ def get_bubble_properties(at,t_f,x_f,u_f,control_volume_size):
     bubble_props = {
         "arrival_location":     x_p[0,:],
         "exit_location":        x_p[-1,:],
-        "exit_time":            t_f[et_idx],
+        "arrival_time":         t_p[0],
+        "exit_time":            t_p[-1],
         "time":                 t_p,
         "trajectory":           x_p,
         "velocity":             u_p,
@@ -445,6 +486,7 @@ def SBG_simulate_bubble_piercing(kk,
         u_f,
         control_volume_size,
         arrival_times,
+        random_arrival_loc,
         b_size,
         t_probe,
         c_probe,
@@ -463,11 +505,12 @@ def SBG_simulate_bubble_piercing(kk,
         u_f                 (np.array): A dictionary containing the probe properties
         control_volume_size (np.array): A string defining the reproducibility
         arrival_times       (np.array): A flag to print the progress
-        b_size              (np.array): Number of jobs to start for parallel runs
-        t_probe             (np.array): Number of jobs to start for parallel runs
-        c_probe             (np.array): Number of jobs to start for parallel runs
-        sensor_delta            (list): Number of jobs to start for parallel runs
-        progress                (bool): Number of jobs to start for parallel runs
+        random_arrival_loc  (np.array): Random arrival locations of bubbles
+        b_size              (np.array): The bubble size
+        t_probe             (np.array): Time vector of the probe
+        c_probe             (np.array): center location of the probe
+        sensor_delta            (list): Locations of each individual sensor
+        progress                (bool): A flag to print the progress
         nb                       (int): Number of bubbles
 
         Returns
@@ -478,8 +521,10 @@ def SBG_simulate_bubble_piercing(kk,
 
     # get bubble arrival time
     at = arrival_times[kk]
+    # arrival location
+    ax = random_arrival_loc[kk,:]
     # get bubble properties
-    bubble_props = get_bubble_properties(at,t_f,x_f,u_f,control_volume_size)
+    bubble_props = get_bubble_properties(at,ax,t_f,x_f,u_f,control_volume_size)
     t_p = bubble_props['time']
     x_p = bubble_props['trajectory']
     t_min = t_p[0]
@@ -589,10 +634,11 @@ def SBG_signal(
     d_max = get_max_bubble_sve_size(flow_properties)
     control_volume_size = np.zeros(3)
     # length
-    control_volume_size[0] = 2*d_max + max_probe_size[0]
+    control_volume_size[0] = 6*d_max + max_probe_size[0]
     # width
-    control_volume_size[1] = 5*d_max + max(max_probe_size[1],max_probe_size[2])
-    control_volume_size[2] = 5*d_max + max(max_probe_size[1],max_probe_size[2])
+    control_volume_size[1] = 2*d + max(max_probe_size[1],max_probe_size[2])
+    control_volume_size[2] = 2*d + max(max_probe_size[1],max_probe_size[2])
+
     # cross-sectional CV area at inflow
     control_volume_area = control_volume_size[1]*control_volume_size[2]
 
@@ -601,10 +647,23 @@ def SBG_signal(
     C = flow_properties['void_fraction']
     # Calculate bubble frequency
     # F = C*U*CV_a/V_b
-    F = C*np.linalg.norm(um)*control_volume_area/V_b
-
+    F = C*np.linalg.norm(um)*(control_volume_area + control_volume_size[1]*d + control_volume_size[2]*d)/V_b
     # Create the bubbles (number of bubbles and array with bubble size)
     nb, b_size = create_bubbles(flow_properties, F)
+    # correct number of bubbles to get correct void fraction in case of lognormal distributions
+    chord_times = np.zeros(nb)
+    if flow_properties['bubbles']['size_distribution'] == 'lognormal':
+        for ii in range(0,nb):
+            r = math.sqrt(random.uniform(-control_volume_size[1]/2.0,control_volume_size[1]/2.0)**2+
+                random.uniform(-control_volume_size[2]/2.0,control_volume_size[2]/2.0)**2)
+            R = b_size[ii,0]/2
+            if r < R:
+                chord_times[ii] = math.sqrt(R**2-r**2)*2/np.linalg.norm(um)
+        cumulative_chord_times = np.cumsum(chord_times)
+        C_eff = cumulative_chord_times/flow_properties['duration']
+        nb = len(C_eff[C_eff <= C])
+        F = nb/flow_properties['duration']
+        b_size = b_size[0:nb,:]
 
     # Inter-arrival time (time between two bubbles)
     # ASSUMPTION: equally spaced (in time) bubble distribution
@@ -612,7 +671,12 @@ def SBG_signal(
     inter_arrival_time = 1.0/F
     # Initialize arrival time (at) vector
     arrival_times = np.linspace(0,(nb-1)*inter_arrival_time,nb)
-
+    arrival_times = arrival_times[arrival_times <= t_f[-2]]
+    nb = len(arrival_times)
+    # create random bubble arrival locations
+    low  = [-control_volume_size[1]/2.0,-control_volume_size[2]/2.0]
+    high = [ control_volume_size[1]/2.0, control_volume_size[2]/2.0]
+    random_arrival_locations = np.random.uniform(low=low,high=high,size=(nb,2))
     print('\nGenerating velocity and trajectory time series of the bubbles\n')
     # The duration
     duration = flow_properties['duration'];
@@ -644,36 +708,44 @@ def SBG_signal(
 
 
     # get the indices of the signal where piercing happened
-    results = Parallel(n_jobs=nthreads,backend='multiprocessing')(delayed(SBG_simulate_bubble_piercing)(kk, t_f, x_f, u_f, control_volume_size, arrival_times, b_size, t_probe, c_probe, sensor_delta, progress, nb) for kk in range(0,nb))
+    results = Parallel(n_jobs=nthreads,backend='multiprocessing')(delayed(SBG_simulate_bubble_piercing)(kk, t_f, x_f, u_f, control_volume_size, arrival_times, random_arrival_locations, b_size, t_probe, c_probe, sensor_delta, progress, nb) for kk in range(0,nb))
 
     # Initialize signals to zero
     signal = np.zeros((n_probe, n_sensors)).astype('uint8')
 
     # Initialize bubble properties
-    arrival_times_bubble = arrival_times
+    arrival_times_bubble = np.zeros(nb)*np.nan
     arrival_locations_bubble = np.zeros((nb,3))*np.nan
     exit_times_bubble = np.zeros(nb)*np.nan
     exit_locations_bubble = np.zeros((nb,3))*np.nan
     mean_velocities_bubble = np.zeros((nb,3))*np.nan
     mean_reynolds_stresses_bubble = np.zeros((nb,6))*np.nan
     turbulent_intensities_bubble = np.zeros((nb,3))*np.nan
-
+    chord_times_bubble = np.zeros((nb,len(sensors)))*np.nan
+    chord_lengths_bubble = np.zeros((nb,len(sensors)))*np.nan
+    n_bubbles_pierced = 0
     for ii,bubble in enumerate(results):
+        # get indices of signal for which the signal must be changed to 1
+        signal_indices = bubble[0]
+        # get bubble properties
+        bubble_props = bubble[1]
         # write the signal for each bubble based on time indices when
         # when the bubble was in contact with a sensor
-        signal_indices = bubble[0]
         for sensor_idx in signal_indices:
             # set those indices to 1
-            signal[signal_indices[sensor_idx],sensor_idx] = 1
-
-        bubble_props = bubble[1]
+            if len(signal_indices[sensor_idx]) > 0:
+                signal[signal_indices[sensor_idx][0],sensor_idx] = 1
+                chord_times_bubble[ii,sensor_idx] = float(len(signal_indices[sensor_idx][0]))/float(f_probe)
+                chord_lengths_bubble[ii,sensor_idx] = float(len(signal_indices[sensor_idx][0]))/float(f_probe)*bubble_props["mean_velocity"][0]
+                n_bubbles_pierced+=1
+        arrival_times_bubble[ii] = bubble_props["arrival_time"]
         arrival_locations_bubble[ii,:] = bubble_props["arrival_location"]
-        exit_locations_bubble[ii,:] = bubble_props["exit_location"]
         exit_times_bubble[ii] = bubble_props["exit_time"]
+        exit_locations_bubble[ii,:] = bubble_props["exit_location"]
         mean_velocities_bubble[ii,:] = bubble_props["mean_velocity"]
         mean_reynolds_stresses_bubble[ii,:] = bubble_props["mean_reynolds_stress"]
         turbulent_intensities_bubble[ii,:] = bubble_props["turbulent_intensity"]
-
+    F_bubbles_pierced = n_bubbles_pierced/duration
     # Create the H5-file writer
     writer = H5Writer(path / 'binary_signal.h5', 'w')
     # Write the time vector
@@ -695,6 +767,9 @@ def SBG_signal(
     writer.writeDataSet('bubbles/mean_velocity', mean_velocities_bubble, 'float64')
     writer.writeDataSet('bubbles/reynold_stresses', mean_reynolds_stresses_bubble, 'float64')
     writer.writeDataSet('bubbles/turbulent_intensity', turbulent_intensities_bubble, 'float64')
+    writer.writeDataSet('bubbles/chord_times', chord_times_bubble, 'float64')
+    writer.writeDataSet('bubbles/chord_lengths', chord_lengths_bubble, 'float64')
+    writer.writeDataSet('bubbles/pierced_bubble_frequency', np.array([F_bubbles_pierced]), 'float64')
     writer.close()
 
     print(f'Successfully generated the signal')
