@@ -5,7 +5,7 @@ import pathlib
 import subprocess
 import shutil
 from typing import List
-
+import numpy as np
 """
     global variables and functions
 """
@@ -54,17 +54,22 @@ def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, 
     if iteration == total:
         print()
 
-import numpy as np
 def find_nearest(array, value):
     array = np.asarray(array)
     idx = (np.abs(array - value)).argmin()
     return array[idx]
 
-import numpy as np
 def find_nearest_idx(array, value):
     array = np.asarray(array)
     idx = (np.abs(array - value)).argmin()
     return idx
+
+def find_nearest_smaller_idx(array, value):
+    array = np.asarray(array)
+    nearest_smaller_value = array[array <= value].max()
+    idx = (np.abs(array - nearest_smaller_value)).argmin()
+    return idx
+
 
 def inverse_den(x):
     """
