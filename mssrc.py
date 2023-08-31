@@ -739,7 +739,7 @@ def run_sig_proc_dual_ED(args, bubble_props, sensors, cos_eta_0k):
                     sensors[0]['relative_location'][0]))
 
         # calculate the instantaneous velocity magnitude
-        u_inst_mag = delta_x / delta_t_p
+        u_inst_mag = delta_x * inverse_den(delta_t_p)
 
         # calculate the instantaneous velocity vector
         u_inst = np.array([u_inst_mag, 0.0, 0.0])

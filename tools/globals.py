@@ -6,6 +6,7 @@ import subprocess
 import shutil
 from typing import List
 import numpy as np
+import math
 """
     global variables and functions
 """
@@ -53,6 +54,19 @@ def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, 
     # Print New Line on Complete
     if iteration == total:
         print()
+
+def round_nearest(num: float, to: float) -> float:
+    return round(num / to) * to  # Credited to Paul H.
+
+def round_down(num: float, to: float) -> float:
+    nearest = round_nearest(num, to)
+    if math.isclose(num, nearest): return num
+    return nearest if nearest < num else nearest - to
+
+def round_up(num: float, to: float) -> float:
+    nearest = round_nearest(num, to)
+    if math.isclose(num, nearest): return num
+    return nearest if nearest > num else nearest + to
 
 def find_nearest(array, value):
     array = np.asarray(array)

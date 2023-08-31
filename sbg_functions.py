@@ -60,6 +60,8 @@ def create_bubbles(flow_properties, F):
 
     # Define some variables for easier use
     tau = flow_properties['duration'];
+    C = flow_properties['void_fraction'];
+    Um = flow_properties['mean_velocity'];
     # Get bubble properties
     bubbles = flow_properties['bubbles']
     if bubbles['shape'] == 'sphere':
@@ -385,27 +387,14 @@ def SBG_fluid_velocity(path, flow_properties, reproducible, progress):
     print(f'Successfully written fluid velocity time series and trajectory')
     print(f'Finished in {time2-time1:.2f} seconds\n')
 
-
-def SBG_interp_trajectory(
-    t_traj,
-    X,
-    t):
-    idx = bisect.bisect_right(t_traj, t)
-    m = (X[idx] - X[idx-1]) / (t_traj[idx] - t_traj[idx-1])
-    Xinterp = X[idx] + m*(t - t_traj[idx])
-    return Xinterp
-
 def SBG_get_signal_traj(
     t_p,
     x_p,
     t_probe):
-
-    t_probe_unique = np.unique(np.hstack((t_p, t_probe[t_probe<=max(t_p)])))
-    t_p_del = t_p[np.invert(np.isin(t_p, t_probe))]
-    x_interp = pd.DataFrame(x_p, index=t_p, columns=['x','y','z'])
-    x_interp = x_interp.reindex(t_probe_unique).interpolate(method='index')
-    x_interp = x_interp.drop(index=t_p_del)
-    return x_interp.index, x_interp.values
+    x_interp = np.interp(t_probe, t_p, x_p[:,0])
+    y_interp = np.interp(t_probe, t_p, x_p[:,1])
+    z_interp = np.interp(t_probe, t_p, x_p[:,2])
+    return np.array([x_interp,y_interp,z_interp]).transpose()
 
 def get_bubble_properties(at,ax,t_f,x_f,u_f,control_volume_size):
     """ Returns the bubble properties.
@@ -488,11 +477,11 @@ def SBG_simulate_bubble_piercing(kk,
         arrival_times,
         random_arrival_loc,
         b_size,
-        t_probe,
-        c_probe,
+        dt_probe,
         sensor_delta,
         progress,
-        nb):
+        nb,
+        c_probe=np.array([])):
 
     """ Simulate bubble trajectories, track bubble trajectories with respect to
         to sensor locations and store during which time indices the bubble is 
@@ -507,7 +496,7 @@ def SBG_simulate_bubble_piercing(kk,
         arrival_times       (np.array): A flag to print the progress
         random_arrival_loc  (np.array): Random arrival locations of bubbles
         b_size              (np.array): The bubble size
-        t_probe             (np.array): Time vector of the probe
+        dt_probe            (np.array): Sampling time step of the probe
         c_probe             (np.array): center location of the probe
         sensor_delta            (list): Locations of each individual sensor
         progress                (bool): A flag to print the progress
@@ -530,39 +519,43 @@ def SBG_simulate_bubble_piercing(kk,
     t_min = t_p[0]
     t_max = t_p[-1]
     # Get probe sampling times that lie within the estimated timeframe
-    t_probe_kk = t_probe[(t_probe >= t_min) & (t_probe <= t_max)]
+    t_probe_kk_start = round_up(t_min,dt_probe)
+    idx_start = round(t_probe_kk_start/dt_probe)
+    t_probe_kk_end = round_down(t_max,dt_probe)
+    t_probe_kk = np.linspace(t_probe_kk_start,t_probe_kk_end,round((t_probe_kk_end-t_probe_kk_start)/dt_probe)+1)
     signal_indices = {}
     # Check if number of samples lies inside the timeframe is larger than 0
     if len(t_probe_kk) > 0:
         # Resample the trajectory to the sampling times of the probe
-        t_p_resampled, x_p_resampled = SBG_get_signal_traj(t_p, \
+        x_p_resampled = SBG_get_signal_traj(t_p, \
                             x_p, t_probe_kk)
-        # Get probe locations that lie within the estimated timeframe
-        c_probe_kk = c_probe[(t_probe >= t_min) & (t_probe <= t_max),:]
+        if len(c_probe) > 0:
+            # Get probe locations that lie within the estimated timeframe
+            c_probe_kk = c_probe[round(t_probe_kk_start/dt_probe):round(t_probe_kk_end/dt_probe)+1,:]
+        else:
+            c_probe_kk = np.zeros((len(t_probe_kk),3))
         abc = b_size[kk,:] / 2.0
-        # Determine the row in the signal time series where to write the signal
-        row = np.where(t_probe == min(t_probe_kk))[0][0]
         # Loop over each sensor and check if it is inside the bubble
         for idx,delta in sensor_delta.items():
             # Check if ellipsoid is pierced by sensor idx
             # Standard euqation: (x/a)2 + (y/b)2 + (z/c)2 = 1
             # with x = (cx+delta - x_bubble)
             radius = \
-                    (((c_probe_kk[:,0]+delta[0])-x_p_resampled[:,0])/abc[0])**2 \
-                  + (((c_probe_kk[:,1]+delta[1])-x_p_resampled[:,1])/abc[1])**2 \
-                  + (((c_probe_kk[:,2]+delta[2])-x_p_resampled[:,2])/abc[2])**2
+                (((c_probe_kk[:,0]+delta[0])-x_p_resampled[:,0])/abc[0])**2 \
+              + (((c_probe_kk[:,1]+delta[1])-x_p_resampled[:,1])/abc[1])**2 \
+              + (((c_probe_kk[:,2]+delta[2])-x_p_resampled[:,2])/abc[2])**2
             # Check for which time steps the bubble is pierced
-            idxs = np.where(radius <= 1) + row
+            idxs = np.where(radius <= 1)
             # pierced, set signal to 1
             signal_indices[idx] = idxs
         # Display progress
         if progress:
             printProgressBar(kk + 1, nb, prefix = 'Progress:', suffix = 'Complete', length = 50)
-        return [signal_indices,bubble_props]
+        return [idx_start,signal_indices,bubble_props]
     else:
         for idx,delta in sensor_delta.items():
             signal_indices[idx] = np.array([])
-        return [signal_indices,bubble_props]
+        return [idx_start,signal_indices,bubble_props]
 
 def SBG_signal(
     path,
@@ -634,7 +627,7 @@ def SBG_signal(
     d_max = get_max_bubble_sve_size(flow_properties)
     control_volume_size = np.zeros(3)
     # length
-    control_volume_size[0] = 6*d_max + max_probe_size[0]
+    control_volume_size[0] = 2*d_max + max_probe_size[0]
     # width
     control_volume_size[1] = 2*d + max(max_probe_size[1],max_probe_size[2])
     control_volume_size[2] = 2*d + max(max_probe_size[1],max_probe_size[2])
@@ -647,7 +640,7 @@ def SBG_signal(
     C = flow_properties['void_fraction']
     # Calculate bubble frequency
     # F = C*U*CV_a/V_b
-    F = C*np.linalg.norm(um)*(control_volume_area + control_volume_size[1]*d + control_volume_size[2]*d)/V_b
+    F = C*np.linalg.norm(um)*(control_volume_area)/V_b
     # Create the bubbles (number of bubbles and array with bubble size)
     nb, b_size = create_bubbles(flow_properties, F)
     # correct number of bubbles to get correct void fraction in case of lognormal distributions
@@ -661,10 +654,18 @@ def SBG_signal(
                 chord_times[ii] = math.sqrt(R**2-r**2)*2/np.linalg.norm(um)
         cumulative_chord_times = np.cumsum(chord_times)
         C_eff = cumulative_chord_times/flow_properties['duration']
-        nb = len(C_eff[C_eff <= C])
-        F = nb/flow_properties['duration']
-        b_size = b_size[0:nb,:]
-
+        # nb = len(C_eff[C_eff <= C])
+        # F = nb/flow_properties['duration']
+        # b_size = b_size[0:nb,:]
+    for ii in range(0,nb):
+        r = math.sqrt(random.uniform(-control_volume_size[1]/2.0,control_volume_size[1]/2.0)**2+
+            random.uniform(-control_volume_size[2]/2.0,control_volume_size[2]/2.0)**2)
+        R = b_size[ii,0]/2
+        if r < R:
+            chord_times[ii] = math.sqrt(R**2-r**2)*2/np.linalg.norm(um)
+    cumulative_chord_times = np.sum(chord_times)
+    C_eff = cumulative_chord_times/flow_properties['duration']
+    print(f'DEBUG: C_eff = {C_eff}')
     # Inter-arrival time (time between two bubbles)
     # ASSUMPTION: equally spaced (in time) bubble distribution
     # iat = 1.0/F - db/np.linalg.norm(um)
@@ -708,8 +709,10 @@ def SBG_signal(
 
 
     # get the indices of the signal where piercing happened
-    results = Parallel(n_jobs=nthreads,backend='multiprocessing')(delayed(SBG_simulate_bubble_piercing)(kk, t_f, x_f, u_f, control_volume_size, arrival_times, random_arrival_locations, b_size, t_probe, c_probe, sensor_delta, progress, nb) for kk in range(0,nb))
-
+    if 'VIBRATION' in uncertainty:
+        results = Parallel(n_jobs=nthreads,backend='multiprocessing')(delayed(SBG_simulate_bubble_piercing)(kk, t_f, x_f, u_f, control_volume_size, arrival_times, random_arrival_locations, b_size, dt_probe, sensor_delta, progress, nb, c_probe) for kk in range(0,nb))
+    else:
+        results = Parallel(n_jobs=nthreads,backend='multiprocessing')(delayed(SBG_simulate_bubble_piercing)(kk, t_f, x_f, u_f, control_volume_size, arrival_times, random_arrival_locations, b_size, dt_probe, sensor_delta, progress, nb) for kk in range(0,nb))
     # Initialize signals to zero
     signal = np.zeros((n_probe, n_sensors)).astype('uint8')
 
@@ -724,19 +727,25 @@ def SBG_signal(
     chord_times_bubble = np.zeros((nb,len(sensors)))*np.nan
     chord_lengths_bubble = np.zeros((nb,len(sensors)))*np.nan
     n_bubbles_pierced = 0
+    cumulative_chord_times = 0.0
     for ii,bubble in enumerate(results):
+        # get signal start time (to get proper indices)
+        idx_start = bubble[0]
         # get indices of signal for which the signal must be changed to 1
-        signal_indices = bubble[0]
+        signal_indices = bubble[1]
         # get bubble properties
-        bubble_props = bubble[1]
+        bubble_props = bubble[2]
+        # Determine the row in the signal time series where to write the signal
         # write the signal for each bubble based on time indices when
         # when the bubble was in contact with a sensor
         for sensor_idx in signal_indices:
             # set those indices to 1
             if len(signal_indices[sensor_idx]) > 0:
-                signal[signal_indices[sensor_idx][0],sensor_idx] = 1
+                signal[(signal_indices[sensor_idx][0]+idx_start),sensor_idx] = 1
                 chord_times_bubble[ii,sensor_idx] = float(len(signal_indices[sensor_idx][0]))/float(f_probe)
                 chord_lengths_bubble[ii,sensor_idx] = float(len(signal_indices[sensor_idx][0]))/float(f_probe)*bubble_props["mean_velocity"][0]
+                if sensor_idx == 0:
+                    cumulative_chord_times += float(len(signal_indices[sensor_idx][0]))/float(f_probe)
                 n_bubbles_pierced+=1
         arrival_times_bubble[ii] = bubble_props["arrival_time"]
         arrival_locations_bubble[ii,:] = bubble_props["arrival_location"]
@@ -745,6 +754,7 @@ def SBG_signal(
         mean_velocities_bubble[ii,:] = bubble_props["mean_velocity"]
         mean_reynolds_stresses_bubble[ii,:] = bubble_props["mean_reynolds_stress"]
         turbulent_intensities_bubble[ii,:] = bubble_props["turbulent_intensity"]
+    C_bubbles_pierced = cumulative_chord_times/float(duration)
     F_bubbles_pierced = n_bubbles_pierced/duration
     # Create the H5-file writer
     writer = H5Writer(path / 'binary_signal.h5', 'w')
@@ -770,6 +780,7 @@ def SBG_signal(
     writer.writeDataSet('bubbles/chord_times', chord_times_bubble, 'float64')
     writer.writeDataSet('bubbles/chord_lengths', chord_lengths_bubble, 'float64')
     writer.writeDataSet('bubbles/pierced_bubble_frequency', np.array([F_bubbles_pierced]), 'float64')
+    writer.writeDataSet('bubbles/pierced_bubble_void_fraction', np.array([C_bubbles_pierced]), 'float64')
     writer.close()
 
     print(f'Successfully generated the signal')
