@@ -13,14 +13,14 @@
     },
     {
       "file": "flow_data.h5",
-      "dataset" : "bubbles/velocity",
+      "dataset" : "bubbles/mean_velocity",
       "tag": "compare bubble velocity time series",
       "rel": 1e-6,
       "abs": 1e-6
     },
     {
       "file": "flow_data.h5",
-      "dataset" : "bubbles/arrival_time",
+      "dataset" : "bubbles/arrival_times",
       "tag": "compare the generated bubble arrival time",
       "rel": 1e-6,
       "abs": 1e-6

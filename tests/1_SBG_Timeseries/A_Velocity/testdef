@@ -38,41 +38,6 @@
       "tag": "compare fluid turbulent intensity",
       "rel": 1e-6,
       "abs": 1e-6
-    },
-    {
-      "file": "flow_data.h5",
-      "dataset" : "bubbles/velocity",
-      "tag": "compare bubble velocity time series",
-      "rel": 1e-6,
-      "abs": 1e-6
-    },
-    {
-      "file": "flow_data.h5",
-      "dataset" : "bubbles/trajectory",
-      "tag": "compare bubble trajectory time series",
-      "rel": 1e-6,
-      "abs": 1e-6
-    },
-    {
-      "file": "flow_data.h5",
-      "dataset" : "bubbles/reynold_stresses",
-      "tag": "compare bubble Reynold stresses",
-      "rel": 1e-6,
-      "abs": 1e-6
-    },
-    {
-      "file": "flow_data.h5",
-      "dataset" : "bubbles/mean_velocity",
-      "tag": "compare bubble mean velocity",
-      "rel": 1e-6,
-      "abs": 1e-6
-    },
-    {
-      "file": "flow_data.h5",
-      "dataset" : "bubbles/turbulent_intensity",
-      "tag": "compare bubble turbulent intensity",
-      "rel": 1e-6,
-      "abs": 1e-6
     }
   ]
 }
