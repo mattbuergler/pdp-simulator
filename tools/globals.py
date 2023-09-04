@@ -84,6 +84,22 @@ def find_nearest_smaller_idx(array, value):
     idx = (np.abs(array - nearest_smaller_value)).argmin()
     return idx
 
+def calculate_unit_vector(point1, point2):
+    # Calculate the vector from point1 to point2
+    delta_x = point2[0] - point1[0]
+    delta_y = point2[1] - point1[1]
+    delta_z = point2[2] - point1[2]
+
+    # Calculate the magnitude of the vector
+    magnitude = math.sqrt(delta_x**2 + delta_y**2 + delta_z**2)
+
+    if magnitude == 0:
+        # Handle the case where the points are the same (division by zero)
+        return None
+
+    # Calculate the unit vector
+    unit_vector = (delta_x / magnitude, delta_y / magnitude, delta_z / magnitude)
+    return unit_vector
 
 def inverse_den(x):
     """

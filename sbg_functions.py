@@ -557,6 +557,52 @@ def SBG_simulate_bubble_piercing(kk,
             signal_indices[idx] = np.array([])
         return [idx_start,signal_indices,bubble_props]
 
+def get_virtual_distance(pos1,pos2,d1,d2,control_volume_size):
+    y_min = min(pos1[1],pos2[1])
+    y_max = min(pos1[1],pos2[1])
+    z_min = min(pos1[2],pos2[2])
+    z_max = min(pos1[2],pos2[2])
+    dx = abs(pos2[0] - pos1[1])
+    dy = (control_volume_size[1]/2.0-y_max) + (y_min - (-control_volume_size[1]/2.0))
+    dz = (control_volume_size[2]/2.0-z_max) + (z_min - (-control_volume_size[2]/2.0))
+    virtual_distance = math.sqrt(dx**2 + dy**2 + dz**2) 
+    return virtual_distance
+
+def get_bubble_overlap_distance(pos1,pos2,d1,d2,control_volume_size):
+    actual_distance = min(math.sqrt(sum(((pos1-pos2)**2))),get_virtual_distance(pos1,pos2,d1,d2,control_volume_size))
+    necessary_distance = d1/2.0 + d2/2.0
+    bubbles_overlap = actual_distance < necessary_distance
+    return max(necessary_distance - actual_distance,0.0)
+
+def bubbles_overlap(pos1,pos2,d1,d2,control_volume_size):
+    actual_distance = min(math.sqrt(sum(((pos1-pos2)**2))),get_virtual_distance(pos1,pos2,d1,d2,control_volume_size))
+    necessary_distance = d1/2.0 + d2/2.0
+    bubbles_overlap = actual_distance < necessary_distance
+    return bubbles_overlap
+
+def move_bubble(pos1,pos2,overlap_distance,control_volume_size):
+    unit_vec = calculate_unit_vector(pos1,pos2)
+
+    # determine new position
+    y_new = pos2[1] + unit_vec[1]*overlap_distance*1.1
+    z_new = pos2[2] + unit_vec[2]*overlap_distance*1.1
+
+    # mirror at control volume boundary of y-axis if necessary
+    if y_new > control_volume_size[1]/2.0:
+        y_new = -control_volume_size[1]/2.0 + (y_new - control_volume_size[1]/2.0)
+    elif y_new < -control_volume_size[1]/2.0:
+        y_new = control_volume_size[1]/2.0 - (-control_volume_size[1]/2.0 - y_new)
+
+    # mirror at control volume boundary of z-axis if necessary
+    if z_new > control_volume_size[2]/2.0:
+        z_new = -control_volume_size[2]/2.0 + (z_new - control_volume_size[2]/2.0)
+    elif z_new < -control_volume_size[2]/2.0:
+        z_new = control_volume_size[2]/2.0 - (-control_volume_size[2]/2.0 - z_new)
+
+    # move to new position
+    pos2_new = np.array([pos2[0],y_new,z_new])
+    return pos2_new
+
 def SBG_signal(
     path,
     flow_properties,
@@ -654,18 +700,10 @@ def SBG_signal(
                 chord_times[ii] = math.sqrt(R**2-r**2)*2/np.linalg.norm(um)
         cumulative_chord_times = np.cumsum(chord_times)
         C_eff = cumulative_chord_times/flow_properties['duration']
-        # nb = len(C_eff[C_eff <= C])
-        # F = nb/flow_properties['duration']
-        # b_size = b_size[0:nb,:]
-    for ii in range(0,nb):
-        r = math.sqrt(random.uniform(-control_volume_size[1]/2.0,control_volume_size[1]/2.0)**2+
-            random.uniform(-control_volume_size[2]/2.0,control_volume_size[2]/2.0)**2)
-        R = b_size[ii,0]/2
-        if r < R:
-            chord_times[ii] = math.sqrt(R**2-r**2)*2/np.linalg.norm(um)
-    cumulative_chord_times = np.sum(chord_times)
-    C_eff = cumulative_chord_times/flow_properties['duration']
-    print(f'DEBUG: C_eff = {C_eff}')
+        nb = len(C_eff[C_eff <= C])
+        F = nb/flow_properties['duration']
+        b_size = b_size[0:nb,:]
+
     # Inter-arrival time (time between two bubbles)
     # ASSUMPTION: equally spaced (in time) bubble distribution
     # iat = 1.0/F - db/np.linalg.norm(um)
@@ -678,7 +716,104 @@ def SBG_signal(
     low  = [-control_volume_size[1]/2.0,-control_volume_size[2]/2.0]
     high = [ control_volume_size[1]/2.0, control_volume_size[2]/2.0]
     random_arrival_locations = np.random.uniform(low=low,high=high,size=(nb,2))
-    print('\nGenerating velocity and trajectory time series of the bubbles\n')
+
+    # for ii in range(0,nb):
+    #     r = math.sqrt(arrival_locations[ii,0]**2+
+    #         arrival_locations[ii,1]**2)
+    #     R = b_size[ii,0]/2
+    #     if r < R:
+    #         chord_times[ii] = math.sqrt(R**2-r**2)*2/np.linalg.norm(um)
+    # cumulative_chord_times = np.sum(chord_times)
+    # C_eff = cumulative_chord_times/flow_properties['duration']
+    # print(f'DEBUG: C_eff = {C_eff}')
+
+    arrival_locations = np.zeros((nb,2))
+    arrival_locations[0,:] = random_arrival_locations[0,:]
+    random_arrival_locations = np.delete(random_arrival_locations, 0, 0)
+    touch_cnt = 0
+    still_touch_cnt = 0
+    # print(nb)
+    for ii in range(1,nb):
+        # # approx. position of previous bubble, when bubble ii enters
+        # pos1 = np.array([um[0]*(arrival_times[ii]-arrival_times[ii-1]),
+        #                              arrival_locations[ii-1,0],
+        #                              arrival_locations[ii-1,1]])
+        # # entering position of bubble ii
+        # pos2 = np.array([0.0,
+        #                 arrival_locations[ii,0],
+        #                 arrival_locations[ii,1]])
+        # if bubbles_overlap(pos1,pos2,b_size[ii-1,0],b_size[ii,0],control_volume_size):
+        #     touch_cnt += 1
+        # max_iter = 10
+        # n_iter = 0
+        # while bubbles_overlap(pos1,pos2,b_size[ii-1,0],b_size[ii,0],control_volume_size) & (n_iter <= max_iter):
+        #     overlap_distance = get_bubble_overlap_distance(pos1,pos2,b_size[ii-1,0],b_size[ii,0],control_volume_size)
+        #     # print(overlap_distance)
+        #     # move bubble ii away from bubble at pos1
+        #     pos2 = move_bubble(pos1,pos2,overlap_distance,control_volume_size)
+        #     n_iter += 1
+        # if bubbles_overlap(pos1,pos2,b_size[ii-1,0],b_size[ii,0],control_volume_size):
+        #     still_touch_cnt += 1
+        # arrival_locations[ii,:] = pos2[1::]
+
+        # Option 2:
+        nb_check = min(ii,math.ceil(d_max/(inter_arrival_time*um[0])))
+
+        overlap = False
+        # approx. position of previous bubble, when bubble ii enters
+        # entering position of bubble ii
+        random_pos = random_arrival_locations[0,:]
+        pos2 = np.array([0.0,
+                        random_pos[0],
+                        random_pos[1]])
+        for jj in range(0,nb_check):
+            idx = ii-jj-1
+            pos_jj = np.array([um[0]*(arrival_times[ii]-arrival_times[idx]),
+                                         arrival_locations[idx,0],
+                                         arrival_locations[idx,1]])
+
+
+            if bubbles_overlap(pos_jj,pos2,b_size[idx,0],b_size[ii,0],control_volume_size):
+                overlap = True
+        if overlap:
+            touch_cnt += 1
+        max_iter = len(random_arrival_locations)-2
+        n_iter = 0
+        while overlap & (n_iter <= max_iter):
+            n_iter += 1
+            overlap = False
+            # create now position and hope they don't overlap
+            random_pos = random_arrival_locations[n_iter,:]
+            pos2 = np.array([0.0,
+                        random_pos[0],
+                        random_pos[1]])
+            for jj in range(0,nb_check):
+                idx = ii-jj-1
+                pos_jj = np.array([um[0]*(arrival_times[ii]-arrival_times[idx]),
+                                             arrival_locations[idx,0],
+                                             arrival_locations[idx,1]])
+                if bubbles_overlap(pos_jj,pos2,b_size[idx,0],b_size[ii,0],control_volume_size):
+                    overlap = True
+        if overlap:
+            still_touch_cnt += 1
+        random_arrival_locations = np.delete(random_arrival_locations, n_iter, 0)
+        arrival_locations[ii,:] = pos2[1::]
+
+    # print(f'DEBUG: touch_cnt = {touch_cnt}')
+    # print(f'DEBUG: still_touch_cnt = {still_touch_cnt}')
+
+    # chord_times = np.zeros(nb)
+    # for ii in range(0,nb):
+    #     r = math.sqrt(arrival_locations[ii,0]**2+
+    #         arrival_locations[ii,1]**2)
+    #     R = b_size[ii,0]/2
+    #     if r < R:
+    #         chord_times[ii] = math.sqrt(R**2-r**2)*2/np.linalg.norm(um)
+    # cumulative_chord_times = np.sum(chord_times)
+    # C_eff = cumulative_chord_times/flow_properties['duration']
+    # print(f'DEBUG: C_eff = {C_eff}')
+
+    print('\nGenerating trajectory time series of the bubbles\n')
     # The duration
     duration = flow_properties['duration'];
     # The sampling frequency
@@ -710,9 +845,9 @@ def SBG_signal(
 
     # get the indices of the signal where piercing happened
     if 'VIBRATION' in uncertainty:
-        results = Parallel(n_jobs=nthreads,backend='multiprocessing')(delayed(SBG_simulate_bubble_piercing)(kk, t_f, x_f, u_f, control_volume_size, arrival_times, random_arrival_locations, b_size, dt_probe, sensor_delta, progress, nb, c_probe) for kk in range(0,nb))
+        results = Parallel(n_jobs=nthreads,backend='multiprocessing')(delayed(SBG_simulate_bubble_piercing)(kk, t_f, x_f, u_f, control_volume_size, arrival_times, arrival_locations, b_size, dt_probe, sensor_delta, progress, nb, c_probe) for kk in range(0,nb))
     else:
-        results = Parallel(n_jobs=nthreads,backend='multiprocessing')(delayed(SBG_simulate_bubble_piercing)(kk, t_f, x_f, u_f, control_volume_size, arrival_times, random_arrival_locations, b_size, dt_probe, sensor_delta, progress, nb) for kk in range(0,nb))
+        results = Parallel(n_jobs=nthreads,backend='multiprocessing')(delayed(SBG_simulate_bubble_piercing)(kk, t_f, x_f, u_f, control_volume_size, arrival_times, arrival_locations, b_size, dt_probe, sensor_delta, progress, nb) for kk in range(0,nb))
     # Initialize signals to zero
     signal = np.zeros((n_probe, n_sensors)).astype('uint8')
 
@@ -728,6 +863,7 @@ def SBG_signal(
     chord_lengths_bubble = np.zeros((nb,len(sensors)))*np.nan
     n_bubbles_pierced = 0
     cumulative_chord_times = 0.0
+    cumulative_chord_times_overlap = 0.0
     for ii,bubble in enumerate(results):
         # get signal start time (to get proper indices)
         idx_start = bubble[0]
@@ -741,11 +877,13 @@ def SBG_signal(
         for sensor_idx in signal_indices:
             # set those indices to 1
             if len(signal_indices[sensor_idx]) > 0:
+                if sensor_idx == 0:
+                    cumulative_chord_times += float(len(signal_indices[sensor_idx][0]))/float(f_probe)
+                    overlap = np.sum(signal[(signal_indices[sensor_idx][0]+idx_start),sensor_idx] == 1)
+                    cumulative_chord_times_overlap += float(overlap)/float(f_probe)
                 signal[(signal_indices[sensor_idx][0]+idx_start),sensor_idx] = 1
                 chord_times_bubble[ii,sensor_idx] = float(len(signal_indices[sensor_idx][0]))/float(f_probe)
                 chord_lengths_bubble[ii,sensor_idx] = float(len(signal_indices[sensor_idx][0]))/float(f_probe)*bubble_props["mean_velocity"][0]
-                if sensor_idx == 0:
-                    cumulative_chord_times += float(len(signal_indices[sensor_idx][0]))/float(f_probe)
                 n_bubbles_pierced+=1
         arrival_times_bubble[ii] = bubble_props["arrival_time"]
         arrival_locations_bubble[ii,:] = bubble_props["arrival_location"]
@@ -754,8 +892,10 @@ def SBG_signal(
         mean_velocities_bubble[ii,:] = bubble_props["mean_velocity"]
         mean_reynolds_stresses_bubble[ii,:] = bubble_props["mean_reynolds_stress"]
         turbulent_intensities_bubble[ii,:] = bubble_props["turbulent_intensity"]
+    C_bubbles_overlapped = cumulative_chord_times_overlap/float(duration)
     C_bubbles_pierced = cumulative_chord_times/float(duration)
     F_bubbles_pierced = n_bubbles_pierced/duration
+    C_measured = np.mean(signal[:,0])
     # Create the H5-file writer
     writer = H5Writer(path / 'binary_signal.h5', 'w')
     # Write the time vector
@@ -781,6 +921,8 @@ def SBG_signal(
     writer.writeDataSet('bubbles/chord_lengths', chord_lengths_bubble, 'float64')
     writer.writeDataSet('bubbles/pierced_bubble_frequency', np.array([F_bubbles_pierced]), 'float64')
     writer.writeDataSet('bubbles/pierced_bubble_void_fraction', np.array([C_bubbles_pierced]), 'float64')
+    writer.writeDataSet('bubbles/pierced_overlapped_bubble_void_fraction', np.array([C_bubbles_overlapped]), 'float64')
+    writer.writeDataSet('bubbles/measured_void_fraction', np.array([C_measured]), 'float64')
     writer.close()
 
     print(f'Successfully generated the signal')
