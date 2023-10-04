@@ -10,6 +10,7 @@ from joblib import Parallel, delayed
 from pathlib import Path
 import shutil
 import scipy
+from matplotlib import pyplot as plt
 
 try:
     from dataio.H5Writer import H5Writer
@@ -387,13 +388,10 @@ def SBG_fluid_velocity(path, flow_properties, reproducible, progress):
     print(f'Successfully written fluid velocity time series and trajectory')
     print(f'Finished in {time2-time1:.2f} seconds\n')
 
-def SBG_get_signal_traj(
-    t_p,
-    x_p,
-    t_probe):
-    x_interp = np.interp(t_probe, t_p, x_p[:,0])
-    y_interp = np.interp(t_probe, t_p, x_p[:,1])
-    z_interp = np.interp(t_probe, t_p, x_p[:,2])
+def interpolate_time_series(t_old,value_old,t_new):
+    x_interp = np.interp(t_new, t_old, value_old[:,0])
+    y_interp = np.interp(t_new, t_old, value_old[:,1])
+    z_interp = np.interp(t_new, t_old, value_old[:,2])
     return np.array([x_interp,y_interp,z_interp]).transpose()
 
 def get_bubble_properties(at,ax,t_f,x_f,u_f,control_volume_size):
@@ -416,56 +414,36 @@ def get_bubble_properties(at,ax,t_f,x_f,u_f,control_volume_size):
     # time index
     at_idx = find_nearest_smaller_idx(t_f,at)
     # get exit time index of bubble
-    et_idx = at_idx + len(x_f[at_idx::,0][(x_f[at_idx::,0]-x_f[at_idx,0]) <= control_volume_size[0]]) + 1
+    et_idx = at_idx + len(x_f[at_idx::,0][(x_f[at_idx::,0]-x_f[at_idx,0]) <= control_volume_size[0]]) + 2
     if et_idx >= len(t_f):
         et_idx = len(t_f)-1
     # bubble time in control volume
-    t_p = t_f[at_idx:et_idx] + (at - t_f[at_idx])
-    # bubble trajectory = deplacement + fluid trajectory after arrival time
-    x_p = np.array([-control_volume_size[0]/2.0,
-                    ax[0],
-                    ax[1]]) \
-        + (x_f[at_idx:et_idx,:] - x_f[at_idx,:])
+    t_p = t_f[at_idx:(et_idx+1)]
+    # interpolate location at arrival time
+    x_p_at = interpolate_time_series(t_f[at_idx:(et_idx+1)],x_f[at_idx:(et_idx+1)],np.array([at]))
+    # arrival location
+    x_at = np.array([-control_volume_size[0]/2.0,ax[0],ax[1]])
+    x_p_0 = x_f[at_idx:(et_idx+1)] - x_f[at_idx]
+    x_p = (x_at - (x_p_at - x_f[at_idx])) + x_p_0
+    # exit location
+    x_et = interpolate_time_series(x_p[:,0],x_p,np.array([control_volume_size[0]/2.0]))
+    et = np.interp(np.array([control_volume_size[0]/2.0]), x_p[:,0], t_p)
     # get bubble velocity
     # assuming no-slip:
     # bubble velocity = fluid velocity after arrival time
-    u_p = u_f[at_idx:et_idx]
-    # Calculate the statistics
-    # Calculate mean velocity
-    u_p_m = u_p.mean(axis=0)
-    # Initialize the reynolds stress tensors time series
-    reynolds_stress = np.empty((len(u_p),3,3))
-    for ii in range(0,len(u_p)):
-        # Calculate velocity fluctuations
-        u_p_prime = u_p[ii,:]-u_p_m
-        # Reynolds stresses as outer product of fluctuations
-        reynolds_stress[ii,:,:] = np.outer(u_p_prime, u_p_prime)
-    # Calculate mean Reynolds stresses
-    reynolds_stress = reynolds_stress.mean(axis=0)
-    mean_reynolds_stress = [reynolds_stress[0,0],
-                            reynolds_stress[1,0],
-                            reynolds_stress[1,1],
-                            reynolds_stress[2,0],
-                            reynolds_stress[2,1],
-                            reynolds_stress[2,2]]
-    # Calculate turbulent intensity with regard to mean x-velocity
-    turbulent_intensity = np.sqrt(np.array([
-            mean_reynolds_stress[0], \
-            mean_reynolds_stress[2], \
-            mean_reynolds_stress[5], \
-            ])) / np.sqrt(u_p_m.dot(u_p_m))
+    u_p = u_f[at_idx:(et_idx+1)]
     # Store bubble properties
     bubble_props = {
-        "arrival_location":     x_p[0,:],
-        "exit_location":        x_p[-1,:],
-        "arrival_time":         t_p[0],
-        "exit_time":            t_p[-1],
+        "arrival_location":     x_at,
+        "exit_location":        x_et,
+        "arrival_time":         at,
+        "exit_time":            et,
         "time":                 t_p,
         "trajectory":           x_p,
         "velocity":             u_p,
-        "mean_velocity":        u_p_m,
-        "mean_reynolds_stress": mean_reynolds_stress,
-        "turbulent_intensity":  turbulent_intensity
+        "mean_velocity":        np.ones((1,3))*np.nan,
+        "mean_reynolds_stress": np.ones((1,6))*np.nan,
+        "turbulent_intensity":  np.ones((1,3))*np.nan
     }
     return bubble_props
 
@@ -527,7 +505,7 @@ def SBG_simulate_bubble_piercing(kk,
     # Check if number of samples lies inside the timeframe is larger than 0
     if len(t_probe_kk) > 0:
         # Resample the trajectory to the sampling times of the probe
-        x_p_resampled = SBG_get_signal_traj(t_p, \
+        x_p_resampled = interpolate_time_series(t_p, \
                             x_p, t_probe_kk)
         if len(c_probe) > 0:
             # Get probe locations that lie within the estimated timeframe
@@ -536,6 +514,8 @@ def SBG_simulate_bubble_piercing(kk,
             c_probe_kk = np.zeros((len(t_probe_kk),3))
         abc = b_size[kk,:] / 2.0
         # Loop over each sensor and check if it is inside the bubble
+        min_idx = len(t_probe_kk)+1
+        max_idx = -1
         for idx,delta in sensor_delta.items():
             # Check if ellipsoid is pierced by sensor idx
             # Standard euqation: (x/a)2 + (y/b)2 + (z/c)2 = 1
@@ -548,6 +528,40 @@ def SBG_simulate_bubble_piercing(kk,
             idxs = np.where(radius <= 1)
             # pierced, set signal to 1
             signal_indices[idx] = idxs
+            if len(idxs[0]) > 0:
+                min_idx = min(min_idx,np.nanmin(idxs[0]))
+                max_idx = max(max_idx,np.nanmax(idxs[0]))
+        if (max_idx - min_idx) >= 0:
+            u_p_resampled = interpolate_time_series(t_p, \
+                            bubble_props['velocity'], t_probe_kk)
+            u_p_interaction = u_p_resampled[min_idx:(max_idx+1)]
+            # Calculate the statistics
+            # Calculate mean velocity
+            u_mean = u_p_interaction.mean(axis=0)
+            # Initialize the reynolds stress tensors time series
+            reynolds_stress = np.empty((len(u_p_interaction),3,3))
+            for ii in range(0,len(u_p_interaction)):
+                # Calculate velocity fluctuations
+                u_prime = u_p_interaction[ii,:]-u_mean
+                # Reynolds stresses as outer product of fluctuations
+                reynolds_stress[ii,:,:] = np.outer(u_prime, u_prime)
+            # Calculate mean Reynolds stresses
+            reynolds_stress = reynolds_stress.mean(axis=0)
+            mean_reynolds_stress = [reynolds_stress[0,0],
+                                    reynolds_stress[1,0],
+                                    reynolds_stress[1,1],
+                                    reynolds_stress[2,0],
+                                    reynolds_stress[2,1],
+                                    reynolds_stress[2,2]]
+            # Calculate turbulent intensity with regard to mean x-velocity
+            turbulent_intensity = np.sqrt(np.array([
+                    mean_reynolds_stress[0], \
+                    mean_reynolds_stress[2], \
+                    mean_reynolds_stress[5], \
+                    ])) / np.sqrt(u_mean.dot(u_mean))
+            bubble_props["mean_velocity"] = u_mean
+            bubble_props["mean_reynolds_stress"] = mean_reynolds_stress
+            bubble_props["turbulent_intensity"] = turbulent_intensity
         # Display progress
         if progress:
             printProgressBar(kk + 1, nb, prefix = 'Progress:', suffix = 'Complete', length = 50)
@@ -645,8 +659,11 @@ def SBG_signal(
     # Read the fluid velocity
     x_f = reader.getDataSet('fluid/trajectory')[:]
     reader.close()
-    # if necessary, downsample velocity and trajectory
-    
+
+    # Define some variables for easier use
+    um = np.asarray(flow_properties['mean_velocity'])
+    C = flow_properties['void_fraction']
+
     # Gather the probe information (id and relative location [=delta])
     n_sensors = len(probe['sensors'])
     # Initialize an empty dictionary
@@ -666,6 +683,20 @@ def SBG_signal(
     
     max_probe_size = max_range - min_range
 
+    # if necessary, downsample velocity and trajectory
+    # minimum frequency to have at approx. five trajectory values
+    # while bubble travels between tips
+    travel_time = max_probe_size[0]/um[0]
+    f_u = 1.0/travel_time*5.0
+    if f_u >= flow_properties['realization_frequency']:
+        n = round(flow_properties['duration'] * f_u)+1
+        # Time vector
+        t_new = np.linspace(0,flow_properties['duration'],n)
+        t_new = np.sort(np.unique(np.append(t_new,t_f)))
+        u_f = interpolate_time_series(t_f,u_f,t_new)
+        x_f = interpolate_time_series(t_f,x_f,t_new)
+        t_f = t_new
+
     # Determine control volume (CV) size
     # get the mean sphere-volume-equivalent bubble diameter
     d = get_mean_bubble_sve_size(flow_properties)
@@ -682,9 +713,6 @@ def SBG_signal(
     # cross-sectional CV area at inflow
     control_volume_area = control_volume_size[1]*control_volume_size[2]
 
-    # Define some variables for easier use
-    um = np.asarray(flow_properties['mean_velocity'])
-    C = flow_properties['void_fraction']
     # Calculate bubble frequency
     # F = C*U*CV_a/V_b
     F = C*np.linalg.norm(um)*(control_volume_area)/V_b
@@ -807,7 +835,6 @@ def SBG_signal(
         results = Parallel(n_jobs=nthreads,backend='multiprocessing')(delayed(SBG_simulate_bubble_piercing)(kk, t_f, x_f, u_f, control_volume_size, arrival_times, arrival_locations, b_size, dt_probe, sensor_delta, progress, nb) for kk in range(0,nb))
     # Initialize signals to zero
     signal = np.zeros((n_probe, n_sensors)).astype('uint8')
-
     time2 = time.time()
     print(f'Finished bubble tracking. Current runtime: {time2-time1:.2f} seconds\n')
     print('\nWriting signal and results.\n')
@@ -821,7 +848,7 @@ def SBG_signal(
     turbulent_intensities_bubble = np.zeros((nb,3))*np.nan
     chord_times_bubble = np.zeros((nb,len(sensors)))*np.nan
     chord_lengths_bubble = np.zeros((nb,len(sensors)))*np.nan
-    pierced_bubbles = np.zeros((nb,len(sensors)))*np.nan
+    pierced_bubbles = np.zeros((nb,len(sensors)),dtype='uint8')
     n_bubbles_pierced = 0
     cumulative_chord_times = 0.0
     cumulative_chord_times_overlap = 0.0
@@ -837,16 +864,16 @@ def SBG_signal(
         # when the bubble was in contact with a sensor
         for sensor_idx in signal_indices:
             # set those indices to 1
-            if len(signal_indices[sensor_idx]) > 0:
+            if len(signal_indices[sensor_idx][0]) > 0:
                 if sensor_idx == 0:
                     cumulative_chord_times += float(len(signal_indices[sensor_idx][0]))/float(f_probe)
                     overlap = np.sum(signal[(signal_indices[sensor_idx][0]+idx_start),sensor_idx] == 1)
                     cumulative_chord_times_overlap += float(overlap)/float(f_probe)
+                    n_bubbles_pierced+=1
                 signal[(signal_indices[sensor_idx][0]+idx_start),sensor_idx] = 1
+                pierced_bubbles[ii,sensor_idx] = 1
                 chord_times_bubble[ii,sensor_idx] = float(len(signal_indices[sensor_idx][0]))/float(f_probe)
                 chord_lengths_bubble[ii,sensor_idx] = float(len(signal_indices[sensor_idx][0]))/float(f_probe)*bubble_props["mean_velocity"][0]
-                pierced_bubbles[ii,sensor_idx] = 1
-                n_bubbles_pierced+=1
         arrival_times_bubble[ii] = bubble_props["arrival_time"]
         arrival_locations_bubble[ii,:] = bubble_props["arrival_location"]
         exit_times_bubble[ii] = bubble_props["exit_time"]
