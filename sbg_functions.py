@@ -329,13 +329,13 @@ def SBG_fluid_velocity(path, flow_properties, reproducible, progress):
         # First velocity vector depends on old chunk
         u_f[0,:] = SBG_dt_corr(u_f_old[0,:], um, sigma, T, dt, R[0,:])
         # First trajectory vector depends on old chunk
-        x_f[0,:] = x_f_old[0,:] + (u_f[0,:]+u_f_old[0,:])/2.0*dt
+        x_f[0,:] = x_f_old[0,:] + u_f_old[0,:]*dt
         # Calculate rest of the chunk
         for ii in range(1,n_chunk):
             # Calculate velocity
             u_f[ii,:] = SBG_dt_corr(u_f[ii-1,:], um, sigma, T, dt, R[ii,:])
             # Calculate trajectory
-            x_f[ii,:] = x_f[ii-1,:] + (u_f[ii,:]+u_f[ii-1,:])/2.0*dt;
+            x_f[ii,:] = x_f[ii-1,:] + u_f[ii-1,:]*dt
         # Write chunk to .h5 file
         writer.write2DataSet('fluid/velocity', u_f, row=kk, col=0)
         writer.write2DataSet('fluid/trajectory', x_f, row=kk, col=0)

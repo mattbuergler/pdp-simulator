@@ -101,7 +101,7 @@ if __name__ != "main":
     )
     parser.add_argument('-tsa', '--velocity_tsa', action='store_true',
         help="Vizualize the results.", default=False)
-    parser.add_argument('-roc', '--ROC', default=True, metavar='BOOL',
+    parser.add_argument('-roc', '--ROC', default=False, metavar='BOOL',
         help='Perform robust outlier cutoff (ROC) based on the maximum' +
                 'absolute deviation and the universal threshold (True/False).')
     args = vars(parser.parse_args())
