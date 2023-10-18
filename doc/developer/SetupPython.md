@@ -40,6 +40,10 @@ git pull
 ### Install *pipenv*
 https://realpython.com/pipenv-guide/
 
+```shell
+pip install pipenv
+```
+
 ## Windows 10
 
 ### Install Python 3.9.0
