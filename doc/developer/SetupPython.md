@@ -21,7 +21,7 @@ curl https://pyenv.run | bash
 **Add the following lines to .bashrc:**
 
 ```shell
-export PATH="/home/matthias/.pyenv/bin:$PATH"
+export PATH="/home/$USER/.pyenv/bin:$PATH"
 eval "$(pyenv init -)"
 eval "$(pyenv virtualenv-init -)"
 ```
