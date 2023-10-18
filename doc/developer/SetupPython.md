@@ -34,7 +34,6 @@ pyenv install -v 3.9.0
 **Upgrade pyenv**
 
 ```shell
-
 cd $(pyenv root)
 git pull
 ```
