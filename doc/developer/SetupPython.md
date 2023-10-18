@@ -16,7 +16,6 @@ libncursesw5-dev xz-utils tk-dev libffi-dev liblzma-dev python-openssl
 ```
 **Install pyenv **
 ```shell
-
 curl https://pyenv.run | bash
 ```
 **Add the following lines to .bashrc:**
