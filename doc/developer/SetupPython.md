@@ -55,7 +55,7 @@ https://www.python.org/downloads/release/python-390/
 In the command prompt run:
 
 ```shell
-pip install pyenv-win --target %USERPROFILE%\\.pyenv --no-user --upgrade
+pip install pyenv-win --target %USERPROFILE%\\.pyenv
 ```
 
 If you run into an error with the above command use the folllowing instead:
