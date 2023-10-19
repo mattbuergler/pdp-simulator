@@ -185,8 +185,12 @@ def velocity(n_lags, delta_x, f_sample, S1, S2):
             SPR_nofilter = 0
         else:
             #otherwise second highest peak divided by the highest peak
-            SPR = max(peaks[peaks<max(peaks)])/max(peaks)
-            SPR_nofilter = max(peaks[peaks<max(peaks)])/max(peaks)
+            if (len(peaks[peaks<max(peaks)]) > 0):
+                SPR = max(peaks[peaks<max(peaks)])/max(peaks)
+                SPR_nofilter = max(peaks[peaks<max(peaks)])/max(peaks)
+            else:
+                SPR = np.nan
+                SPR_nofilter = np.nan
         # lag with max. cross-correlation coefficient
         lagsRxymax = np.argmax(corr)
         # maximum cross-correlation coefficient 
@@ -327,6 +331,7 @@ def run_sig_proc_awcc(path, args, config, sensor_ids, t_signal, signal):
 
     print('Determining the windows.\n')
     n_windows,start,stop,t,chord_times = windows(chord_a,chord_w,n_particles,f_sample, progress=args.progress)
+    print('Determining the velocities.\n')
     results = Parallel(n_jobs=int(args.nthreads),backend='multiprocessing')(delayed(calc_velocity_awwcc)(ii, start, stop, signal, f_sample, delta_x, args) for ii in range(0,n_windows))
     results = pd.concat(results)
     # plot the figure for evaluation of the filtering
