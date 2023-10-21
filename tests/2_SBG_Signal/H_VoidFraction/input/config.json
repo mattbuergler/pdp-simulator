@@ -9,7 +9,7 @@
             "size_distribution": "constant",
             "diameter": 0.003
         },
-        "void_fraction": 0.5,
+        "void_fraction": 0.1,
         "duration": 10.0,
         "realization_frequency": 10000
     },
