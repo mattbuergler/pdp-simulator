@@ -582,40 +582,11 @@ def get_virtual_distance(pos1,pos2,d1,d2,control_volume_size):
     virtual_distance = math.sqrt(dx**2 + dy**2 + dz**2) 
     return virtual_distance
 
-def get_bubble_overlap_distance(pos1,pos2,d1,d2,control_volume_size):
-    actual_distance = min(math.sqrt(sum(((pos1-pos2)**2))),get_virtual_distance(pos1,pos2,d1,d2,control_volume_size))
-    necessary_distance = d1/2.0 + d2/2.0
-    bubbles_overlap = actual_distance < necessary_distance
-    return max(necessary_distance - actual_distance,0.0)
-
 def bubbles_overlap(pos1,pos2,d1,d2,control_volume_size):
     actual_distance = min(math.sqrt(sum(((pos1-pos2)**2))),get_virtual_distance(pos1,pos2,d1,d2,control_volume_size))
     necessary_distance = d1/2.0 + d2/2.0
     bubbles_overlap = actual_distance < necessary_distance
     return bubbles_overlap
-
-def move_bubble(pos1,pos2,overlap_distance,control_volume_size):
-    unit_vec = calculate_unit_vector(pos1,pos2)
-
-    # determine new position
-    y_new = pos2[1] + unit_vec[1]*overlap_distance*1.1
-    z_new = pos2[2] + unit_vec[2]*overlap_distance*1.1
-
-    # mirror at control volume boundary of y-axis if necessary
-    if y_new > control_volume_size[1]/2.0:
-        y_new = -control_volume_size[1]/2.0 + (y_new - control_volume_size[1]/2.0)
-    elif y_new < -control_volume_size[1]/2.0:
-        y_new = control_volume_size[1]/2.0 - (-control_volume_size[1]/2.0 - y_new)
-
-    # mirror at control volume boundary of z-axis if necessary
-    if z_new > control_volume_size[2]/2.0:
-        z_new = -control_volume_size[2]/2.0 + (z_new - control_volume_size[2]/2.0)
-    elif z_new < -control_volume_size[2]/2.0:
-        z_new = control_volume_size[2]/2.0 - (-control_volume_size[2]/2.0 - z_new)
-
-    # move to new position
-    pos2_new = np.array([pos2[0],y_new,z_new])
-    return pos2_new
 
 def SBG_signal(
     path,
@@ -742,60 +713,48 @@ def SBG_signal(
     arrival_times = arrival_times[arrival_times <= t_f[-2]]
     nb = len(arrival_times)
     # create random bubble arrival locations
-    low  = [-control_volume_size[1]/2.0,-control_volume_size[2]/2.0]
-    high = [ control_volume_size[1]/2.0, control_volume_size[2]/2.0]
-    random_arrival_locations = np.random.uniform(low=low,high=high,size=(nb,2))
+    low = [-control_volume_size[1] / 2.0, -control_volume_size[2] / 2.0]
+    high = [control_volume_size[1] / 2.0, control_volume_size[2] / 2.0]
+    random_arrival_locations = list(np.random.uniform(low=low, high=high, size=(nb, 2)))
 
-    arrival_locations = np.zeros((nb,2))
-    arrival_locations[0,:] = random_arrival_locations[0,:]
-    random_arrival_locations = np.delete(random_arrival_locations, 0, 0)
+    arrival_locations = np.zeros((nb, 2))
+    arrival_locations[0, :] = random_arrival_locations.pop(0)
     touch_cnt = 0
     still_touch_cnt = 0
 
     print('\nRandomly placing bubbles.\n')
 
-    for ii in range(1,nb):
-        # Option 2:
-        nb_check = min(ii,math.ceil(d_max/(inter_arrival_time*um[0])))
+    for ii in range(1, nb):
+        nb_check = min(ii, math.ceil(d_max / (inter_arrival_time * um[0])))
 
-        overlap = False
-        # approx. position of previous bubble, when bubble ii enters
-        # entering position of bubble ii
-        random_pos = random_arrival_locations[0,:]
-        pos2 = np.array([0.0,
-                        random_pos[0],
-                        random_pos[1]])
-        for jj in range(0,nb_check):
-            idx = ii-jj-1
-            pos_jj = np.array([um[0]*(arrival_times[ii]-arrival_times[idx]),
-                                         arrival_locations[idx,0],
-                                         arrival_locations[idx,1]])
-
-            if bubbles_overlap(pos_jj,pos2,b_size[idx,0],b_size[ii,0],control_volume_size):
-                overlap = True
-        if overlap:
-            touch_cnt += 1
-        max_iter = len(random_arrival_locations)-2
         n_iter = 0
-        while overlap & (n_iter <= max_iter):
-            n_iter += 1
+        max_iter = len(random_arrival_locations) - 1
+
+        while n_iter <= max_iter:
             overlap = False
-            # create now position and hope they don't overlap
-            random_pos = random_arrival_locations[n_iter,:]
-            pos2 = np.array([0.0,
-                        random_pos[0],
-                        random_pos[1]])
-            for jj in range(0,nb_check):
-                idx = ii-jj-1
-                pos_jj = np.array([um[0]*(arrival_times[ii]-arrival_times[idx]),
-                                             arrival_locations[idx,0],
-                                             arrival_locations[idx,1]])
-                if bubbles_overlap(pos_jj,pos2,b_size[idx,0],b_size[ii,0],control_volume_size):
+            random_pos = random_arrival_locations[n_iter]
+            pos2 = np.array([0.0, random_pos[0], random_pos[1]])
+
+            for jj in range(nb_check):
+                idx = ii - jj - 1
+                pos_jj = np.array([um[0] * (arrival_times[ii] - arrival_times[idx]),
+                                   arrival_locations[idx, 0],
+                                   arrival_locations[idx, 1]])
+
+                if bubbles_overlap(pos_jj, pos2, b_size[idx, 0], b_size[ii, 0], control_volume_size):
                     overlap = True
-        if overlap:
-            still_touch_cnt += 1
-        random_arrival_locations = np.delete(random_arrival_locations, n_iter, 0)
-        arrival_locations[ii,:] = pos2[1::]
+                    touch_cnt += 1
+                    break
+
+            if not overlap or n_iter == max_iter:
+                if overlap:
+                    still_touch_cnt += 1
+                random_arrival_locations.pop(n_iter)
+                arrival_locations[ii, :] = pos2[1:]
+                break
+
+            n_iter += 1
+
     time2 = time.time()
     print(f'Finished bubble placement. Current runtime: {time2-time1:.2f} seconds\n')
     print('\nTracking bubbles with respect to probe.\n')
