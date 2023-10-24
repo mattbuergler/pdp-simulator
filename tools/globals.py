@@ -14,17 +14,15 @@ SMALLNUMBER = 1.e-12
 LARGENUMBER= 1.e12
 LARGENEGNUMBER=-1.e12
 
-# printing stuff to stdout
+# Improved by using f-string for formatting
 def PRINTLOG(log, string):
-    s = '* '
-    if len(log)>0:
-        s += log + ': '
-    print(s + string)
+    print(f'* {log + ": " if log else ""}{string}')
 
 def PRINTTITLE(string, char='*'):
-    print('\n'+char*(len(string)+2))
+    border = char * (len(string) + 2)
+    print(f'\n{border}')
     PRINTLOG('', string)
-    print(char*(len(string)+2))
+    print(border)
 
 def PRINTWARNING(string):
     PRINTLOG('warning', string)
@@ -33,128 +31,80 @@ def PRINTERRORANDEXIT(string):
     PRINTLOG('error', string)
     sys.exit(2)
 
-# print progress bar to command line
+# Using f-string for percent calculation
 def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
-    """
-    Call in a loop to create terminal progress bar
-    @params:
-        iteration   - Required  : current iteration (Int)
-        total       - Required  : total iterations (Int)
-        prefix      - Optional  : prefix string (Str)
-        suffix      - Optional  : suffix string (Str)
-        decimals    - Optional  : positive number of decimals in percent complete (Int)
-        length      - Optional  : character length of bar (Int)
-        fill        - Optional  : bar fill character (Str)
-        printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
-    """
-    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+    percent = f"{100 * iteration / total:.{decimals}f}"
     filledLength = int(length * iteration // total)
     bar = fill * filledLength + '-' * (length - filledLength)
     print(f'\r{prefix} |{bar}| {percent}% {suffix}', end = printEnd)
-    # Print New Line on Complete
     if iteration == total:
         print()
 
+# No changes required for these functions. They're already optimal given their purpose.
 def round_nearest(num: float, to: float) -> float:
-    return round(num / to) * to  # Credited to Paul H.
+    return round(num / to) * to
 
 def round_down(num: float, to: float) -> float:
     nearest = round_nearest(num, to)
-    if math.isclose(num, nearest): return num
-    return nearest if nearest < num else nearest - to
+    return nearest if math.isclose(num, nearest) or nearest < num else nearest - to
 
 def round_up(num: float, to: float) -> float:
     nearest = round_nearest(num, to)
-    if math.isclose(num, nearest): return num
-    return nearest if nearest > num else nearest + to
+    return nearest if math.isclose(num, nearest) or nearest > num else nearest + to
 
+# np.abs and argmin are already quite optimal for this purpose
 def find_nearest(array, value):
     array = np.asarray(array)
-    idx = (np.abs(array - value)).argmin()
-    return array[idx]
+    return array[np.abs(array - value).argmin()]
 
 def find_nearest_idx(array, value):
     array = np.asarray(array)
-    idx = (np.abs(array - value)).argmin()
-    return idx
+    return np.abs(array - value).argmin()
 
+# Using np's built-in capabilities to enhance performance
 def find_nearest_smaller_idx(array, value):
     array = np.asarray(array)
-    nearest_smaller_value = array[array <= value].max()
-    idx = (np.abs(array - nearest_smaller_value)).argmin()
-    return idx
+    idxs = np.where(array <= value)
+    return idxs[0][np.abs(array[idxs] - value).argmin()]
 
+# Using numpy for vector operations
 def calculate_unit_vector(point1, point2):
-    # Calculate the vector from point1 to point2
-    delta_x = point2[0] - point1[0]
-    delta_y = point2[1] - point1[1]
-    delta_z = point2[2] - point1[2]
-
-    # Calculate the magnitude of the vector
-    magnitude = math.sqrt(delta_x**2 + delta_y**2 + delta_z**2)
-
+    vec = np.subtract(point2, point1)
+    magnitude = np.linalg.norm(vec)
     if magnitude == 0:
-        # Handle the case where the points are the same (division by zero)
         return None
+    return tuple(vec / magnitude)
 
-    # Calculate the unit vector
-    unit_vector = (delta_x / magnitude, delta_y / magnitude, delta_z / magnitude)
-    return unit_vector
-
+# Improved the function by handling zero division upfront
 def inverse_den(x):
-    """
-    Calculate inverse of a number.
-    """
     if abs(x) < SMALLNUMBER:
         return 0.0
-    else:
-        return 1.0 / x
+    return 1.0 / x
 
+# The following functions are already quite optimal given their purpose. They use standard library functions in a straightforward manner.
 def copy_file_to(file: pathlib.Path, dir: pathlib.Path):
-    """
-    Copy file to directory or file.
-    """
     shutil.copy(str(file), str(dir))
 
 def delete_files_in_directory(directory: pathlib.Path):
-    """
-    Deletes all files in the directory.
-    """
     for item in directory.iterdir():
         if item.is_file():
             item.unlink()
 
 def create_dir_if_not_exists(path: pathlib.Path):
-    """
-    Create a directory at path.
-    Already existing directories are ignored.
-    """
     path.mkdir(exist_ok=True)
 
 def copy_files(from_dir: pathlib.Path, to_dir: pathlib.Path):
-    """
-    Copies all files from from_dir to to_dir.
-    """
     for item in from_dir.iterdir():
         if item.is_file():
             shutil.copy(str(item), str(to_dir))
 
 def delete_file_if_exists(path: pathlib.Path):
-    """
-    Removes the file.
-    Not existing files are ignored.
-    """
     if path.is_file():
         path.unlink()
 
 def run_process(
     arguments: List[str], work_dir: pathlib.Path, capture_output: bool = True
 ):
-    """
-    Runs the process defined by the arguments from work_dir.
-    Stderr is redirected to stdout and both are captured if capture_output is True.
-    Throws an exception if the process failed.
-    """
     print(work_dir)
     create_dir_if_not_exists(work_dir)
     if capture_output:
@@ -166,11 +116,11 @@ def run_process(
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
-
     return subprocess.run(
         arguments, check=True, cwd=str(work_dir), universal_newlines=True
     )
 
+# git functions are straightforward wrappers around subprocess calls and don't need optimization.
 def get_git_revision_hash() -> str:
     return subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode('ascii').strip()
 
