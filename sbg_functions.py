@@ -571,22 +571,20 @@ def SBG_simulate_bubble_piercing(kk,
             signal_indices[idx] = np.array([])
         return [idx_start,signal_indices,bubble_props]
 
-def get_virtual_distance(pos1,pos2,d1,d2,control_volume_size):
-    y_min = min(pos1[1],pos2[1])
-    y_max = min(pos1[1],pos2[1])
-    z_min = min(pos1[2],pos2[2])
-    z_max = min(pos1[2],pos2[2])
-    dx = abs(pos2[0] - pos1[1])
-    dy = (control_volume_size[1]/2.0-y_max) + (y_min - (-control_volume_size[1]/2.0))
-    dz = (control_volume_size[2]/2.0-z_max) + (z_min - (-control_volume_size[2]/2.0))
-    virtual_distance = math.sqrt(dx**2 + dy**2 + dz**2) 
-    return virtual_distance
+def get_virtual_distance(pos1, pos2, control_volume_size):
+    y_min, y_max = np.min([pos1[1], pos2[1]]), np.max([pos1[1], pos2[1]])
+    z_min, z_max = np.min([pos1[2], pos2[2]]), np.max([pos1[2], pos2[2]])
 
-def bubbles_overlap(pos1,pos2,d1,d2,control_volume_size):
-    actual_distance = min(math.sqrt(sum(((pos1-pos2)**2))),get_virtual_distance(pos1,pos2,d1,d2,control_volume_size))
-    necessary_distance = d1/2.0 + d2/2.0
-    bubbles_overlap = actual_distance < necessary_distance
-    return bubbles_overlap
+    dx = abs(pos2[0] - pos1[0])
+    dy = (control_volume_size[1]/2.0 - y_max) + (y_min + control_volume_size[1]/2.0)
+    dz = (control_volume_size[2]/2.0 - z_max) + (z_min + control_volume_size[2]/2.0)
+
+    return np.sqrt(dx**2 + dy**2 + dz**2)
+
+def bubbles_overlap(pos1, pos2, d1, d2, control_volume_size):
+    actual_distance = min(np.linalg.norm(pos1 - pos2), get_virtual_distance(pos1, pos2, control_volume_size))
+    necessary_distance = (d1 + d2) / 2.0
+    return actual_distance < necessary_distance
 
 def SBG_signal(
     path,
