@@ -11,8 +11,6 @@ from pathlib import Path
 import shutil
 import scipy
 from matplotlib import pyplot as plt
-from numba import jit
-from numba.typed import Dict
 
 try:
     from dataio.H5Writer import H5Writer
