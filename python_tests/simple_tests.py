@@ -10,7 +10,17 @@ import random
 import matplotlib
 import json
 from matplotlib import pyplot as plt
+import sys
+import time
 
+time1 = time.time()
+delta_t = time.time() - time1
+nb = 100000000
+large_array = np.random.uniform(low=0, high=1, size=(nb, 2))
+while delta_t < 60:
+    large_array += 0.000001
+    delta_t = time.time() - time1
+sys.exit()
 def find_nearest_smaller_idx(array, value):
     array = np.asarray(array)
     nearest_smaller_value = array[array < value].max()
