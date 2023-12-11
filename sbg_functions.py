@@ -581,6 +581,72 @@ def bubbles_overlap(pos1, pos2, d1, d2, control_volume_size):
     necessary_distance = (d1 + d2) / 2.0
     return actual_distance < necessary_distance
 
+def place_bubbles_without_overlap(
+        random_arrival_locations,
+        arrival_times,
+        b_size,
+        control_volume_size,
+        nb,
+        nb_check_max,
+        velocity
+        ):
+
+    """
+        Place random bubble arrival locations in a way that there is no overlap
+
+        Parameters
+        ----------
+        random_arrival_locations (list): Random arrival locations of bubbles
+        arrival_times        (np.array): Arrival times of the bubbles
+        b_size               (np.array): Bubble sizes
+        control_volume_size  (np.array): Control volume dimensions
+        nb                        (int): Number of bubbles
+        nb_check_max              (int): The fluid velocity
+        velocity                (float): The fluid velocity
+
+        Returns
+        ----------
+        results (np.array): Random arrival locations of bubbles without overlap
+    """
+
+    arrival_locations = np.zeros((nb, 2))
+    arrival_locations[0, :] = random_arrival_locations.pop(0)
+    touch_cnt = 0
+    still_touch_cnt = 0
+
+    for ii in range(1, nb):
+        nb_check = min(ii, nb_check_max)
+
+        n_iter = 0
+        max_iter = len(random_arrival_locations) - 1
+
+        while n_iter <= max_iter:
+            overlap = False
+            random_pos = random_arrival_locations[n_iter]
+            pos2 = np.array([0.0, random_pos[0], random_pos[1]])
+
+            for jj in range(nb_check):
+                idx = ii - jj - 1
+                pos_jj = np.array([velocity * (arrival_times[ii] - arrival_times[idx]),
+                                   arrival_locations[idx, 0],
+                                   arrival_locations[idx, 1]])
+
+                if bubbles_overlap(pos_jj, pos2, b_size[idx, 0], b_size[ii, 0], control_volume_size):
+                    overlap = True
+                    touch_cnt += 1
+                    break
+
+            if not overlap or n_iter == max_iter:
+                if overlap:
+                    still_touch_cnt += 1
+                random_arrival_locations.pop(n_iter)
+                arrival_locations[ii, :] = pos2[1:]
+                break
+            n_iter += 1
+
+    return arrival_locations
+
+
 def down_sample_fluid_time_series(t_f,u_f,x_f,f_u):
     n = round((t_f[-1] - t_f[0]) * f_u)+1
     # Time vector
@@ -748,49 +814,27 @@ def SBG_signal(
     # create random bubble arrival locations
     low = [-control_volume_size[1] / 2.0, -control_volume_size[2] / 2.0]
     high = [control_volume_size[1] / 2.0, control_volume_size[2] / 2.0]
-    random_arrival_locations = list(np.random.uniform(low=low, high=high, size=(nb, 2)))
-
-    arrival_locations = np.zeros((nb, 2))
-    arrival_locations[0, :] = random_arrival_locations.pop(0)
-    touch_cnt = 0
-    still_touch_cnt = 0
-
+    random_arrival_locations = np.random.uniform(low=low, high=high, size=(nb, 2))
     print('\nRandomly placing bubbles.\n')
-
-    for ii in range(1, nb):
-        nb_check = min(ii, math.ceil(d_max / (inter_arrival_time * um[0])))
-
-        n_iter = 0
-        max_iter = len(random_arrival_locations) - 1
-
-        while n_iter <= max_iter:
-            overlap = False
-            random_pos = random_arrival_locations[n_iter]
-            pos2 = np.array([0.0, random_pos[0], random_pos[1]])
-
-            for jj in range(nb_check):
-                idx = ii - jj - 1
-                pos_jj = np.array([um[0] * (arrival_times[ii] - arrival_times[idx]),
-                                   arrival_locations[idx, 0],
-                                   arrival_locations[idx, 1]])
-
-                if bubbles_overlap(pos_jj, pos2, b_size[idx, 0], b_size[ii, 0], control_volume_size):
-                    overlap = True
-                    touch_cnt += 1
-                    break
-
-            if not overlap or n_iter == max_iter:
-                if overlap:
-                    still_touch_cnt += 1
-                random_arrival_locations.pop(n_iter)
-                arrival_locations[ii, :] = pos2[1:]
-                break
-
-            n_iter += 1
-    arrival_times = arrival_times.reshape((nb,1))
-    # arrival_locations = random_arrival_locations    #DEBUG, to remove
+    nb_check_max = math.ceil(d_max / (inter_arrival_time * um[0]))
+    random_arrival_locations = np.array_split(random_arrival_locations,nthreads)
+    arrival_times_split = np.array_split(arrival_times,nthreads)
+    b_size_split = np.array_split(b_size,nthreads)
+    arrival_locations_parallel = Parallel(n_jobs=nthreads,backend='multiprocessing') \
+        (delayed(place_bubbles_without_overlap)(
+                                        list(random_arrival_locations[kk]),
+                                        arrival_times_split[kk],
+                                        b_size_split[kk],
+                                        control_volume_size,
+                                        len(arrival_times_split[kk]),
+                                        nb_check_max,
+                                        um[0]) for kk in range(0,nthreads))
+    arrival_locations = arrival_locations_parallel[0]
+    for kk in range(1,nthreads):
+        arrival_locations = np.concatenate((arrival_locations,arrival_locations_parallel[kk]), axis=0)
     # set x-value of arrival locations to start of control volume
     arrival_locations = np.concatenate((-control_volume_size[0]*np.ones((nb,1)),arrival_locations), axis=1)
+    arrival_times = arrival_times.reshape((nb,1))
     # Create the H5-file writer
     writer = H5Writer(path / 'flow_data.h5', 'a')
     # Write the bubble properties
