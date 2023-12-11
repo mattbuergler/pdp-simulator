@@ -25,9 +25,13 @@ class H5Writer(H5Base):
         return ds
 
     def createDataSet(self, path, dims, dtype):
+        if self.existDataset(path):
+            del self.getF5()[path]
         self.getF5().create_dataset(path, dims, dtype=dtype)
 
     def writeDataSet(self, path, data, dtype):
+        if self.existDataset(path):
+            del self.getF5()[path]
         self.getF5().create_dataset(path, data=data, dtype=dtype)
 
     def write2DataSet(self, path, data, row, col):
@@ -36,10 +40,13 @@ class H5Writer(H5Base):
         row_start = row
         row_end = row_start + rows
         if len(data.shape) > 1:
-            cols = data.shape[1]
-            col_start = col
-            col_end = col_start + cols
-            ds[row_start:row_end, col_start:col_end] = data
+            if data.shape[1] > 1:
+                cols = data.shape[1]
+                col_start = col
+                col_end = col_start + cols
+                ds[row_start:row_end, col_start:col_end] = data
+            else:
+                ds[row_start:row_end] = data
         else:
             ds[row_start:row_end] = data
 
