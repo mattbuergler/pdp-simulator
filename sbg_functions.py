@@ -816,10 +816,11 @@ def SBG_signal(
     high = [control_volume_size[1] / 2.0, control_volume_size[2] / 2.0]
     random_arrival_locations = np.random.uniform(low=low, high=high, size=(nb, 2))
     print('\nRandomly placing bubbles.\n')
+    n_split = max(int(nb/10000),1)
     nb_check_max = math.ceil(d_max / (inter_arrival_time * um[0]))
-    random_arrival_locations = np.array_split(random_arrival_locations,nthreads)
-    arrival_times_split = np.array_split(arrival_times,nthreads)
-    b_size_split = np.array_split(b_size,nthreads)
+    random_arrival_locations = np.array_split(random_arrival_locations,n_split)
+    arrival_times_split = np.array_split(arrival_times,n_split)
+    b_size_split = np.array_split(b_size,n_split)
     arrival_locations_parallel = Parallel(n_jobs=nthreads,backend='multiprocessing') \
         (delayed(place_bubbles_without_overlap)(
                                         list(random_arrival_locations[kk]),
@@ -828,9 +829,9 @@ def SBG_signal(
                                         control_volume_size,
                                         len(arrival_times_split[kk]),
                                         nb_check_max,
-                                        um[0]) for kk in range(0,nthreads))
+                                        um[0]) for kk in range(0,n_split))
     arrival_locations = arrival_locations_parallel[0]
-    for kk in range(1,nthreads):
+    for kk in range(1,n_split):
         arrival_locations = np.concatenate((arrival_locations,arrival_locations_parallel[kk]), axis=0)
     # set x-value of arrival locations to start of control volume
     arrival_locations = np.concatenate((-control_volume_size[0]*np.ones((nb,1)),arrival_locations), axis=1)
