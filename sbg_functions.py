@@ -588,7 +588,8 @@ def place_bubbles_without_overlap(
         control_volume_size,
         nb,
         nb_check_max,
-        velocity
+        velocity,
+        time1
         ):
 
     """
@@ -616,7 +617,6 @@ def place_bubbles_without_overlap(
 
     for ii in range(1, nb):
         nb_check = min(ii, nb_check_max)
-
         n_iter = 0
         max_iter = len(random_arrival_locations) - 1
 
@@ -721,9 +721,7 @@ def SBG_signal(
 
     # Define some variables for easier use
     T = float(flow_properties['duration'])
-    T_chunk = 2.0
-    T_buffer = 0.5
-    n_chunk = math.ceil(T/T_chunk)
+
     um = np.asarray(flow_properties['mean_velocity'])
     C = flow_properties['void_fraction']
 
@@ -811,6 +809,7 @@ def SBG_signal(
     # delete not needed large arrays
     del t_f,u_f,x_f
     nb = len(arrival_times)
+
     # create random bubble arrival locations
     low = [-control_volume_size[1] / 2.0, -control_volume_size[2] / 2.0]
     high = [control_volume_size[1] / 2.0, control_volume_size[2] / 2.0]
@@ -833,6 +832,7 @@ def SBG_signal(
     arrival_locations = arrival_locations_parallel[0]
     for kk in range(1,n_split):
         arrival_locations = np.concatenate((arrival_locations,arrival_locations_parallel[kk]), axis=0)
+
     # set x-value of arrival locations to start of control volume
     arrival_locations = np.concatenate((-control_volume_size[0]*np.ones((nb,1)),arrival_locations), axis=1)
     arrival_times = arrival_times.reshape((nb,1))
@@ -869,7 +869,7 @@ def SBG_signal(
     time2 = time.time()
     print(f'Finished signal initialization. Current runtime: {time2-time1:.2f} seconds\n')
 
-    print('\nTracking bubbles with respect to probe.\n')
+    print('\nInitialize various variables.\n')
 
     if 'VIBRATION' in uncertainty:
         # Initialize the probe location
@@ -895,6 +895,10 @@ def SBG_signal(
     t_f = reader.getDataSet('fluid/time')[:]
     reader.close()
 
+    T_chunk = (20000.0/F)
+    T_buffer = max(T_chunk*0.05,5.0*control_volume_size[0]/um[0])
+    n_chunk = math.ceil(T/T_chunk)
+
     # Get start and end indices all chunks
     chunk_times = get_chunk_times(T,T_chunk,n_chunk)
     chunk_times_buffered = get_chunk_times_buffered(T,T_chunk,n_chunk,T_buffer)
@@ -916,6 +920,11 @@ def SBG_signal(
     writer.createDataSet('bubbles/pierced_bubbles', (nb,len(sensors)), 'u1')
     writer.close()
 
+    time2 = time.time()
+    print(f'Finished signal initialization. Current runtime: {time2-time1:.2f} seconds\n')
+    print('\nTracking bubbles with respect to probe.\n')
+    print(f'T_chunk = {T_chunk}s.')
+    print(f'T_buffer = {T_buffer}s.')
     # Track bubbles in chunks to reduce memory use
     n_bubbles_pierced = 0
     cumulative_chord_times = 0.0
@@ -984,7 +993,7 @@ def SBG_signal(
                                                        ) for kk in range(0,nb_chunk))
         time2 = time.time()
         print(f'Finished bubble tracking for chunk {ii+1} out of {n_chunk}. Current runtime: {time2-time1:.2f} seconds\n')
-        print('\nWriting signal and results.\n')
+        print('\nWriting intermediate signal and results.\n')
         # Initialize bubble properties
         arrival_times_bubble = np.zeros((nb_chunk,1))*np.nan
         arrival_locations_bubble = np.zeros((nb_chunk,3))*np.nan
