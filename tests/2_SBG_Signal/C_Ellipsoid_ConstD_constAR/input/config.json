@@ -57,5 +57,8 @@
         "interface_pairing": "Shen_et_al_2005",
         "n_particles": 10
     },
-    "REPRODUCIBLE": "yes"
+    "REPRODUCIBILITY": {
+        "reproducible": "yes",
+        "seed": 42
+    }
 }

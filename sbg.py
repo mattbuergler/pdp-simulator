@@ -84,17 +84,9 @@ def main():
         sbg_functions.SBG_fluid_velocity(
             path=path,
             flow_properties=config['FLOW_PROPERTIES'],
-            reproducible=config['REPRODUCIBLE'],
+            reproducibility=config['REPRODUCIBILITY'],
             progress=args.progress
         )
-        # sbg_functions.SBG_bubble_generator(
-        #     path=path,
-        #     flow_properties=config['FLOW_PROPERTIES'],
-        #     probe=config['PROBE'],
-        #     reproducible=config['REPRODUCIBLE'],
-        #     progress=args.progress,
-        #     nthreads=int(args.nthreads)
-        # )
     if command in ["signal", 'all']:
         print('Synthetic Signal Generator (SSG)\n')
         if 'UNCERTAINTY_QUANTIFICATION' not in config:
@@ -104,7 +96,7 @@ def main():
             path=path,
             flow_properties=config['FLOW_PROPERTIES'],
             probe=config['PROBE'],
-            reproducible=config['REPRODUCIBLE'],
+            reproducibility=config['REPRODUCIBILITY'],
             uncertainty=config["UNCERTAINTY_QUANTIFICATION"],
             progress=args.progress,
             nthreads=int(args.nthreads)

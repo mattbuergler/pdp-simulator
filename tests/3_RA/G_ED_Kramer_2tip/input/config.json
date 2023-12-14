@@ -40,5 +40,8 @@
         "max_disparity": 0.5,
         "n_particles": 10
     },
-    "REPRODUCIBLE": "yes"
+    "REPRODUCIBILITY": {
+        "reproducible": "yes",
+        "seed": 42
+    }
 }

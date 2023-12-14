@@ -243,7 +243,7 @@ def get_perc_bubble_sve_size(flow_properties, percentile):
         d_percentile = scipy.stats.lognorm.ppf(percentile, s=bubbles['sd_ln_diameter'],scale=math.exp(bubbles['mean_ln_diameter']))
     return d_percentile
 
-def SBG_fluid_velocity(path, flow_properties, reproducible, progress):
+def SBG_fluid_velocity(path, flow_properties, reproducibility, progress):
     """Generate stochastic fluid velocity time series including correlation
     between u' and v' as well as autocorrelation in u(t) depending
     on integral time scale.
@@ -252,7 +252,7 @@ def SBG_fluid_velocity(path, flow_properties, reproducible, progress):
         ----------
         path      (pathlib.Path): The directory
         flow_properties   (dict): A dictionary containing the flow properties
-        reproducible    (string): A string defining the reproducibility
+        reproducibility   (dict): A dictionary defining the reproducibility
         progress          (bool): A flag to print the progress
 
         Returns
@@ -262,8 +262,8 @@ def SBG_fluid_velocity(path, flow_properties, reproducible, progress):
     time1 = time.time()
     # Determine the reproducability of the generated time series
     # If reproducible, then fix seed of random generator
-    if reproducible == 'yes':
-        np.random.seed(42)
+    if reproducibility['reproducible'] == 'yes':
+        np.random.seed(int(reproducibility['seed']))
 
     # Define the time average flow velocity [m/s]
     um = np.asarray(flow_properties['mean_velocity'])
@@ -690,7 +690,7 @@ def SBG_signal(
     path,
     flow_properties,
     probe,
-    reproducible,
+    reproducibility,
     uncertainty,
     progress,
     nthreads):
@@ -703,7 +703,7 @@ def SBG_signal(
         path      (pathlib.Path): The directory
         flow_properties   (dict): A dictionary containing the flow properties
         probe             (dict): A dictionary containing the probe properties
-        reproducible    (string): A string defining the reproducibility
+        reproducibility      (dict): A dictionary defining the reproducibility
         progress          (bool): A flag to print the progress
         nthreads           (int): Number of jobs to start for parallel runs
 
@@ -715,9 +715,9 @@ def SBG_signal(
     time1 = time.time()
     # Determine the reproducability of the generated time series
     # If reproducible, the fix seed of random generator
-    if reproducible == 'yes':
-        np.random.seed(42)
-        random.seed(42)
+    if reproducibility['reproducible'] == 'yes':
+        np.random.seed(int(reproducibility['seed']))
+        random.seed(int(reproducibility['seed']))
 
     # Define some variables for easier use
     T = float(flow_properties['duration'])
