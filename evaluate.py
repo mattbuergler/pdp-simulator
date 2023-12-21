@@ -22,7 +22,7 @@ warnings.simplefilter(action='ignore', category=UserWarning)
 try:
     from dataio.H5Writer import H5Writer
     from dataio.H5Reader import H5Reader
-    from globals import *
+    from tools.globals import *
 except ImportError:
     print("Error while importing modules")
     raise
@@ -52,6 +52,43 @@ def run_roc_filter(values: np.ndarray = None):
     else:
         print('100% invalid data. Not performing ROC.\n')
     return val
+
+def roc_filter_1d(values: np.ndarray = None):
+    """
+    Robust outlier cutoff (ROC) filter based on the standard deviation and
+    the universal threshold.
+
+    Parameters
+    ----------
+    values : np.ndarray
+        The time series to be filtered.
+
+    Returns
+    -------
+    np.ndarray
+        The filtered time series.
+
+    """
+
+    ts_filtered = np.zeros(values.shape)
+    k = 1.483; # based on a normal distro, see Rousseeuw and Croux (1993)
+    # robust estimation of the variance:
+    # expected value estimated through MED
+    ts_med = np.nanmedian(values,axis=0)
+    # ust estimated through MED
+    ts_std = k * np.nanmedian(abs(values - ts_med),axis=0)
+    # universal threshold:
+    # take only the number of non-nan values
+    N = len(values[~np.isnan(values)])
+    lambda_ts = math.sqrt(2*math.log(N))
+    k_std = lambda_ts*ts_std
+    for ii in range(0,len(values)):
+        if (abs((values[ii]-ts_med)*float(inverse_den(k_std))) > 1.0):
+            ts_filtered[ii] = np.nan
+        else:
+            ts_filtered[ii] = values[ii]
+
+    return ts_filtered
 
 def nan_weighted_average(A: np.ndarray = None,
             weights: np.ndarray = None,
