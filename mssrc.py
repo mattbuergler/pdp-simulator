@@ -45,6 +45,42 @@ except ImportError:
 COEFF_0 = Decimal(0.3)   # Eq. (43) in Shen et al. (2005): low limit constant
 V_GAS = Decimal(0.0)     # Eq. (43) in Shen et al. (2005): dummy value, calculated later
 
+def write_compressed_signal(path,t_signal,signal,sensor_ids):
+    f_s = get_signal_frequency(t_signal)
+    length = len(t_signal)
+    compressed_signal = {}
+    for ii,sensor_id in enumerate(sensor_ids):
+        compressed_signal[sensor_id] = compress_signal(signal[:,ii])
+    # Create the H5-file writer
+    writer = H5Writer(path / 'compressed_signal.h5', 'w')
+    # Write the time vector
+    writer.writeDataSet('length', np.array([length],dtype='int32'), 'int32')
+    writer.writeDataSet('f_s', np.array([f_s],dtype='float64'), 'float64')
+    writer.writeDataSet('sensor_ids', np.array(sensor_ids,dtype='int16'), 'int16')
+    for ii,sensor_id in enumerate(sensor_ids):
+        writer.writeDataSet(f'signal{int(sensor_id)}', compressed_signal[sensor_id], 'int32')
+        ds_sig = writer.getDataSet(f'signal{int(sensor_id)}')
+        ds_sig.attrs['sensor_id'] = int(sensor_id)
+    writer.close()
+
+def read_compressed_signal(path):
+    # Create a H5-file reader
+    reader = H5Reader(path / 'compressed_signal.h5')
+    # Read the sampling frequency
+    f_s = reader.getDataSet('f_s')[:][0]
+    # Read the signal length
+    length = reader.getDataSet('length')[:][0]
+    # Get the sensor ids
+    sensor_ids = reader.getDataSet('sensor_ids')[:]
+    signal = np.empty((length,len(sensor_ids)), dtype='int8')
+    for ii,sensor_id in enumerate(sensor_ids):
+        # Read the compressed signal
+        compressed_signal = reader.getDataSet(f'signal{int(sensor_id)}')
+        signal[:,ii] = decompress_signal(compressed_signal,length)
+    reader.close()
+    t_signal = np.linspace(0,(length-1)/f_s,length)
+    return t_signal,signal,sensor_ids
+
 def inverse_den(x):
     """
     Calculate inverse of a number.
@@ -1127,6 +1163,8 @@ def main():
     parser.add_argument('-roc', '--ROC', default='False',
         help='Perform robust outlier cutoff (ROC) based on the maximum' + 
                 'absolute deviation and the universal threshold (True/False).')
+    parser.add_argument('-c', '--compressed_signal', default='False',
+        help='Expect a compressed signal (True/False).')
     parser.add_argument(
         "-n",
         "--nthreads",
@@ -1153,8 +1191,20 @@ def main():
     schema = json.loads(schema_file.read_bytes())
     # Validate the configuration file
     jsonschema.validate(instance=config, schema=schema)
-
-    t_signal,signal,sensor_ids = read_compressed_signal(path)
+    if args.compressed_signal == 'True':
+        t_signal,signal,sensor_ids = read_compressed_signal(path)
+    else:
+        # Create a H5-file reader
+        reader = H5Reader(path / 'binary_signal.h5')
+        # Read the time vector
+        t_signal = (reader.getDataSet('time')[:])
+        # Read the signal time series
+        ds_signal = reader.getDataSet('signal')
+        # Get the signal
+        signal = np.array(ds_signal, dtype='int8')
+        # Get the corresponding sensor ids
+        sensor_ids = ds_signal.attrs['sensor_id']
+        reader.close()
 
     # the sampling duration
     duration = t_signal[-1]-t_signal[0]
@@ -1177,7 +1227,6 @@ def main():
             IAC = math.nan
             print(f"\nDetected {len(bubbles_complete)} averaging windows.")
         elif (ra_type == "dual_tip_ED"):
-            del t_signal
             # Event-detection (ED) for 2 tips
             print('Running AWCC to get initial velocity estimate for iterface pairing.\n')
             weighted_mean_velocity_awcc,mean_reynolds_stress_awcc = get_awcc_properties(path,

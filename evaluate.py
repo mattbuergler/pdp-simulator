@@ -23,8 +23,6 @@ try:
     from dataio.H5Writer import H5Writer
     from dataio.H5Reader import H5Reader
     from globals import *
-    from global_functions import *
-    from plot_config import *
 except ImportError:
     print("Error while importing modules")
     raise

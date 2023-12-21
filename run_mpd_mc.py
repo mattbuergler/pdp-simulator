@@ -125,6 +125,7 @@ if __name__ == '__main__':
                     'python',
                     os.path.join(mpd_bin, 'sbg.py'),
                     '-r', 'signal',
+                    '--compressed_signal', 'True',
                     '-n', '1',
                     '.']
                 print(f'  Task 2 of 4: {task}')
@@ -137,6 +138,7 @@ if __name__ == '__main__':
                     os.path.join(mpd_bin, 'mssrc.py'),
                     '-roc', str(roc),
                     '-n', '1',
+                    '--compressed_signal', 'True',
                     '.']
 
                 print(f'  Task 3 of 4: {task}')
