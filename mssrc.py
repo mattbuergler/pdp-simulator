@@ -75,7 +75,7 @@ def calc_det(mat):
     det = a*e*i + b*f*g + c*d*h - c*e*g - b*d*i - a*f*h
     return det
 
-def chord(signal, duration, progress=False):
+def chord(signal, duration):
     """
         Calculation of chord lengths and bubble/droplet count rate
 
@@ -106,15 +106,12 @@ def chord(signal, duration, progress=False):
             elif (signal[ii+1] == 1):       # and gets dry in next measurement
                 chord_water.append(length_water)
                 length_water = 1
-        # Display progress
-        if progress:
-            printProgressBar(ii, len(signal)-1, prefix = 'Progress:', suffix = 'Complete', length = 50)
     # particle count rate (1/s)
     F = len(chord_air)/duration
 
     return chord_water,chord_air,F
 
-def windows(chord_air, chord_water, n_particles, f_sample, progress):
+def windows(chord_air, chord_water, n_particles, f_sample):
     """
         This function returns the windows start/stop, their computation depends
         upon nParticles
@@ -139,9 +136,6 @@ def windows(chord_air, chord_water, n_particles, f_sample, progress):
         start[ii] = np.sum(chord_air[:n_particles*(ii+1)]) + np.sum(chord_water[:n_particles*(ii+1)])
         stop[ii] = np.sum(chord_air[:n_particles*(ii+1)]) + np.sum(chord_water[:n_particles*(ii+1)])
         chord_times.append(np.asarray(chord_air[n_particles*(ii):n_particles*(ii+1)])/f_sample)
-        # Display progress
-        if progress:
-            printProgressBar(ii, n_windows, prefix = 'Progress:', suffix = 'Complete', length = 50)
     if n_windows > 0:
         start = np.roll(start, 1)
         start[0] = 0;                                  # first time window
@@ -303,7 +297,7 @@ def calc_velocity_awwcc(ii, start, stop, signal, f_sample, delta_x, args):
         printProgressBar(ii, n_windows, prefix = 'Progress:', suffix = 'Complete', length = 50)
     return tmp
 
-def run_sig_proc_awcc(path, args, config, sensor_ids, t_signal, signal):
+def run_sig_proc_awcc(path, args, config, sensor_ids, duration, signal):
     """
         Averaging Windows Cross-Correlation signal processing for dual-tip
         probes.
@@ -312,7 +306,7 @@ def run_sig_proc_awcc(path, args, config, sensor_ids, t_signal, signal):
         args:       the arguments from the CL-parser
         config:     the configuration JSON-file
         sensor_ids: IDs of the sensors
-        t_signal:   the time series of the signal
+        duration:   the duration of time series of the signal
         signal:     the signal
     """
 
@@ -322,18 +316,23 @@ def run_sig_proc_awcc(path, args, config, sensor_ids, t_signal, signal):
     f_sample = config['PROBE']['sampling_frequency']
     sensors = config['PROBE']['sensors']
     delta_x = abs(sensors[1]['relative_location'][0] - sensors[0]['relative_location'][0])
-    # the sampling duration
-    duration = Decimal(t_signal[-1])-Decimal(t_signal[0])
     # get the chord lengths in terms of number of samples
     # chord length [s] = chord length / f_sample
     print('Determining the air and water chord.\n')
-    chord_w,chord_a,F1 = chord(signal[:,0],duration, progress=args.progress)
+    chord_w,chord_a,F1 = chord(signal[:,0],duration)
 
     print('Determining the windows.\n')
-    n_windows,start,stop,t,chord_times = windows(chord_a,chord_w,n_particles,f_sample, progress=args.progress)
+    n_windows,start,stop,t,chord_times = windows(chord_a,chord_w,n_particles,f_sample)
     print('Determining the velocities.\n')
-    results = Parallel(n_jobs=int(args.nthreads),backend='multiprocessing')(delayed(calc_velocity_awwcc)(ii, start, stop, signal, f_sample, delta_x, args) for ii in range(0,n_windows))
-    results = pd.concat(results)
+    # results = Parallel(n_jobs=int(args.nthreads),backend='multiprocessing')(delayed(calc_velocity_awwcc)() for ii in range(0,n_windows))
+    results = []
+    for ii in range(0, n_windows):
+        result = calc_velocity_awwcc(ii, start, stop, signal, f_sample, delta_x, args)
+        results.append(result)
+    if len(results) > 0:
+        results = pd.concat(results)
+    else:
+        results = pd.DataFrame(columns=['n_lags','u_inst','f_inst','c_inst','Rxymax','SPR','u_inst_nofilter','Rxymax_nofilter','SPR_nofilter'])
     # plot the figure for evaluation of the filtering
     evaluate_filtering(path, results['SPR_nofilter'], results['Rxymax_nofilter'], results['u_inst_nofilter'])
 
@@ -359,12 +358,11 @@ def run_sig_proc_awcc(path, args, config, sensor_ids, t_signal, signal):
         bubble_props['velocity'] = u
         bubble_props['diameter'] = np.array([0.0, 0.0])
         bubble_props['chord_times'] = np.asarray(chord_times[ii])
-        bubble_props['bubble_frequency'] = F1
         bubble_props['if_norm_unit_vecs'] = [np.array([0.0, 0.0, 0.0]), \
                                             np.array([0.0, 0.0, 0.0])]
         bubbles.append(bubble_props)
 
-    return bubbles
+    return bubbles,F1
 
 def get_sensor_distance_vectors(config):
     """
@@ -1036,7 +1034,7 @@ def multi_tip_signal_processing(ii, bubble_props, S_0k, S_0k_mag, cos_eta_0k, nb
     else:
         return ['nan', 'nan']
 
-def get_awcc_properties(path, args, config, sensor_ids, t_signal, signal):
+def get_awcc_properties(path, args, config, sensor_ids, duration, signal):
     # get the distance vector between leading and trailing tips
     aux_sensor_ids = []
     S_k = {}
@@ -1067,10 +1065,10 @@ def get_awcc_properties(path, args, config, sensor_ids, t_signal, signal):
     min_dist_sensor = min(S_0k_mag, key=S_0k_mag.get)
 
     # run AWCC for two tips to get first estimate of mean velocity
-    particles = run_sig_proc_awcc(path, args,
+    particles,F1 = run_sig_proc_awcc(path, args,
                                     config,
                                     sensor_ids,
-                                    t_signal,
+                                    duration,
                                     signal[:,[0, min_dist_sensor]])
 
     # convert to arrays
@@ -1156,42 +1154,37 @@ def main():
     # Validate the configuration file
     jsonschema.validate(instance=config, schema=schema)
 
-    # Create a H5-file reader
-    reader = H5Reader(path / 'binary_signal.h5')
-    # Read the time vector
-    t_signal = (reader.getDataSet('time')[:]).astype(str)
-    # Read the signal time series
-    ds_signal = reader.getDataSet('signal')
-    # Get the signal
-    signal = np.array(ds_signal, dtype='int8')
-    # Get the corresponding sensor ids
-    sensor_ids = ds_signal.attrs['sensor_id']
-    reader.close()
+    t_signal,signal,sensor_ids = read_compressed_signal(path)
 
+    # the sampling duration
+    duration = t_signal[-1]-t_signal[0]
     n_sensors = len(sensor_ids)
     # Check the reconstruction algorithm type
     ra_type = config['RECONSTRUCTION']['type']
     # Check the interface-pairing signal processing algorithm
     bubbles_complete = []
+    F1 = 0
     if (n_sensors == 2):
         if (ra_type == "dual_tip_AWCC"):
+            del t_signal
             # AWCC for 2 tips
-            bubbles_complete = run_sig_proc_awcc(path, args,
+            bubbles_complete,F1 = run_sig_proc_awcc(path, args,
                                                 config,
                                                 sensor_ids,
-                                                t_signal,
+                                                duration,
                                                 signal)
             # interfacial area concentration cannot be estimated with AWCC
             IAC = math.nan
             print(f"\nDetected {len(bubbles_complete)} averaging windows.")
         elif (ra_type == "dual_tip_ED"):
+            del t_signal
             # Event-detection (ED) for 2 tips
             print('Running AWCC to get initial velocity estimate for iterface pairing.\n')
             weighted_mean_velocity_awcc,mean_reynolds_stress_awcc = get_awcc_properties(path,
                                                                     args,
                                                                     config,
                                                                     sensor_ids,
-                                                                    t_signal,
+                                                                    duration,
                                                                     signal)
 
             V_GAS = Decimal(weighted_mean_velocity_awcc[0])
@@ -1298,52 +1291,73 @@ def main():
     velocity_reconst = np.empty((len(bubbles_complete),3))
     weighted_mean_velocity_reconst = np.empty(3)
     time_reconst = np.empty((len(bubbles_complete),2))
+    reynolds_stress = np.empty((len(bubbles_complete),3,3))
     # Collect bubble properties, such as diameter
     bubble_diam_reconst = np.empty((len(bubbles_complete),2))
+    chord_lengths_inst_u = np.empty((len(bubbles_complete),1))
+    chord_lengths_mean_u = np.empty((len(bubbles_complete),1))
+    chord_times = np.empty((len(bubbles_complete),1))
+    data_rate = 0.0
     if ((n_sensors >= 4) | (ra_type == "dual_tip_ED")):
         if (interface_pairing_algo == "Kramer_et_al_2020"):
             disparity_reconst = np.empty((len(bubbles_complete),len(aux_sensor_ids)))
-    for ii,bubble_props in enumerate(bubbles_complete):
-        velocity_reconst[ii,:] = np.array([bubble_props['velocity'][0], \
-                                           bubble_props['velocity'][1], \
-                                           bubble_props['velocity'][2]
-                                          ])
-        time_reconst[ii,0] = np.nanmin(bubble_props['ifd_times'].to_numpy().astype('float64'))
-        time_reconst[ii,1] = np.nanmax(bubble_props['ifd_times'].to_numpy().astype('float64'))
-        bubble_diam_reconst[ii,:] = bubble_props['diameter']
-        if ((n_sensors >= 4) | (ra_type == "dual_tip_ED")):
-            if (interface_pairing_algo == "Kramer_et_al_2020"):
-                disparity_reconst[ii,:] = bubble_props['disparity'].ravel()
-    # data filtering
-    # ROC filtering, R12 and SPR filtering implemented in previous loop
-    if args.ROC == 'True':
-        discarded=(sum(sum(np.isnan(velocity_reconst)))/(len(velocity_reconst)*3))*100
-        print(f'Already discarded data: {discarded:.2f} %.\n')
-        print('Performing robust outlier cutoff.\n')
-        while sum(sum(np.isnan(velocity_reconst))) < sum(sum(np.isnan(roc(velocity_reconst)))):
-            velocity_reconst = roc(velocity_reconst)
-        cutoff = cutoff_roc(velocity_reconst)
-        discarded=(sum(sum(np.isnan(velocity_reconst)))/(len(velocity_reconst)*3))*100
-        print(f'Total discarded data: {discarded:.2f} %, with a cutoff of {cutoff:.4f} m/s.\n')
+    if len(bubbles_complete) > 0:
+        for ii,bubble_props in enumerate(bubbles_complete):
+            velocity_reconst[ii,:] = np.array([bubble_props['velocity'][0], \
+                                               bubble_props['velocity'][1], \
+                                               bubble_props['velocity'][2]
+                                              ])
+            time_reconst[ii,0] = np.nanmin(bubble_props['ifd_times'].to_numpy().astype('float64'))
+            time_reconst[ii,1] = np.nanmax(bubble_props['ifd_times'].to_numpy().astype('float64'))
+            bubble_diam_reconst[ii,:] = bubble_props['diameter']
+            if ((n_sensors >= 4) | (ra_type == "dual_tip_ED")):
+                if (interface_pairing_algo == "Kramer_et_al_2020"):
+                    disparity_reconst[ii,:] = bubble_props['disparity'].ravel()
+        # data filtering
+        # ROC filtering, R12 and SPR filtering implemented in previous loop
+        if args.ROC == 'True':
+            discarded=(sum(sum(np.isnan(velocity_reconst)))/(len(velocity_reconst)*3))*100
+            print(f'Already discarded data: {discarded:.2f} %.\n')
+            print('Performing robust outlier cutoff.\n')
+            while sum(sum(np.isnan(velocity_reconst))) < sum(sum(np.isnan(roc(velocity_reconst)))):
+                velocity_reconst = roc(velocity_reconst)
+            cutoff = cutoff_roc(velocity_reconst)
+            discarded=(sum(sum(np.isnan(velocity_reconst)))/(len(velocity_reconst)*3))*100
+            print(f'Total discarded data: {discarded:.2f} %, with a cutoff of {cutoff:.4f} m/s.\n')
 
-    time_deltas = (time_reconst[:,1]-time_reconst[:,0])
-    weighted_mean_velocity_reconst[0] = np.nansum(velocity_reconst[:,0] * time_deltas,axis=0) \
-                                    / np.nansum(time_deltas[~np.isnan(velocity_reconst[:,0])],axis=0)
-    weighted_mean_velocity_reconst[1] = np.nansum(velocity_reconst[:,1] * time_deltas,axis=0) \
-                                    / np.nansum(time_deltas[~np.isnan(velocity_reconst[:,1])],axis=0)
-    weighted_mean_velocity_reconst[2] = np.nansum(velocity_reconst[:,2] * time_deltas,axis=0) \
-                                    / np.nansum(time_deltas[~np.isnan(velocity_reconst[:,2])],axis=0)
+        time_deltas = (time_reconst[:,1]-time_reconst[:,0])
+        weighted_mean_velocity_reconst[0] = np.nansum(velocity_reconst[:,0] * time_deltas,axis=0) \
+                                        / np.nansum(time_deltas[~np.isnan(velocity_reconst[:,0])],axis=0)
+        weighted_mean_velocity_reconst[1] = np.nansum(velocity_reconst[:,1] * time_deltas,axis=0) \
+                                        / np.nansum(time_deltas[~np.isnan(velocity_reconst[:,1])],axis=0)
+        weighted_mean_velocity_reconst[2] = np.nansum(velocity_reconst[:,2] * time_deltas,axis=0) \
+                                        / np.nansum(time_deltas[~np.isnan(velocity_reconst[:,2])],axis=0)
 
-    # Calculate mean velocity
-    mean_velocity_reconst = np.nanmean(velocity_reconst, axis=0)
-    # Initialize the reynolds stress tensors time series
-    reynolds_stress = np.empty((len(velocity_reconst),3,3))
-    for ii in range(0,len(velocity_reconst)):
-        # Calculate velocity fluctuations
-        velocity_fluct_reconst = velocity_reconst[ii,:] - weighted_mean_velocity_reconst
-        # Reynolds stresses as outer product of fluctuations
-        reynolds_stress[ii,:,:] = np.outer(velocity_fluct_reconst, \
-                                    velocity_fluct_reconst)
+
+        # Initialize the reynolds stress tensors time series
+        for ii in range(0,len(velocity_reconst)):
+            # Calculate velocity fluctuations
+            velocity_fluct_reconst = velocity_reconst[ii,:] - weighted_mean_velocity_reconst
+            # Reynolds stresses as outer product of fluctuations
+            reynolds_stress[ii,:,:] = np.outer(velocity_fluct_reconst, \
+                                        velocity_fluct_reconst)
+        chord_lengths_inst_u = []
+        chord_lengths_mean_u = []
+        chord_times = []
+        if ra_type == "dual_tip_AWCC":
+            # calculate chord lengths based on instantaneous velocities
+            for ii,bubble_props in enumerate(bubbles_complete):
+                if np.isnan(bubble_props['velocity'][0]):
+                    chord_lengths_inst_u.append(np.asarray(bubble_props['chord_times']*bubble_props['velocity'][0]))
+                else:
+                    chord_lengths_inst_u.append(np.asarray(bubble_props['chord_times']*bubble_props['velocity'][0]))
+                chord_lengths_mean_u.append(np.asarray(bubble_props['chord_times']*weighted_mean_velocity_reconst[0]))
+                chord_times.append(bubble_props['chord_times'])
+            chord_lengths_inst_u = np.asarray(chord_lengths_inst_u).flatten()
+            chord_lengths_mean_u = np.asarray(chord_lengths_mean_u).flatten()
+            chord_times = np.asarray(chord_times).flatten()
+            bubble_diam_reconst = np.asarray(chord_lengths_inst_u)
+        data_rate = np.array([len(velocity_reconst[~np.isnan(velocity_reconst[:,0])])/(time_reconst[-1,1]-time_reconst[0,0])])
     # Calculate mean Reynolds stresses
     mean_reynolds_stress = np.nanmean(reynolds_stress,axis=0)
     # Calculate turbulent intensity with regard to mean x-velocity
@@ -1353,22 +1367,8 @@ def main():
             mean_reynolds_stress[2,2], \
             ])) / np.sqrt(weighted_mean_velocity_reconst.dot(weighted_mean_velocity_reconst))
 
-    chord_lengths_inst_u = []
-    chord_lengths_mean_u = []
-    chord_times = []
-    if ra_type == "dual_tip_AWCC":
-        # calculate chord lengths based on instantaneous velocities
-        for ii,bubble_props in enumerate(bubbles_complete):
-            if np.isnan(bubble_props['velocity'][0]):
-                chord_lengths_mean_u.append(np.asarray(bubble_props['chord_times']*weighted_mean_velocity_reconst[0]))
-            else:
-                chord_lengths_inst_u.append(np.asarray(bubble_props['chord_times']*bubble_props['velocity'][0]))
-            chord_times.append(bubble_props['chord_times'])
-        chord_lengths_inst_u = np.asarray(chord_lengths_inst_u).flatten()
-        chord_lengths_mean_u = np.asarray(chord_lengths_mean_u).flatten()
-        chord_times = np.asarray(chord_times).flatten()
-        bubble_diam_reconst = np.asarray(chord_lengths_inst_u)
-        bubble_frequency = bubble_props['bubble_frequency']
+    # Calculate mean velocity
+    mean_velocity_reconst = np.nanmean(velocity_reconst, axis=0)
     print('\nSaving results....\n')
     # Create the H5-file writer
     writer = H5Writer(path / 'reconstructed.h5', 'w')
@@ -1400,11 +1400,11 @@ def main():
         writer.writeDataSet('bubbles/chord_lengths_inst_vel', chord_lengths_inst_u, 'float64')
         writer.writeDataSet('bubbles/chord_lengths_mean_vel', chord_lengths_mean_u, 'float64')
         writer.writeDataSet('bubbles/chord_times', chord_times, 'float64')
-        writer.writeDataSet('bubbles/bubble_frequency', bubble_frequency, 'float64')
+        writer.writeDataSet('bubbles/bubble_frequency', np.array([F1],dtype='float64'), 'float64')
     # Create the IAC and void_fraction datasets
     writer.writeDataSet('IAC', np.array([IAC],dtype='float64'), 'float64')
     writer.writeDataSet('voidFraction', np.array([np.mean(signal[:,0])]), 'float64')
-    writer.writeDataSet('bubbles/data_rate', np.array([len(velocity_reconst[~np.isnan(velocity_reconst[:,0])])/(time_reconst[-1,1]-time_reconst[0,0])]), 'float64')
+    writer.writeDataSet('bubbles/data_rate', data_rate, 'float64')
     writer.close()
     time2 = time.time()
     print(f'Successfully run the reconstruction algorithm')

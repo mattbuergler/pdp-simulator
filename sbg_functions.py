@@ -588,9 +588,7 @@ def place_bubbles_without_overlap(
         control_volume_size,
         nb,
         nb_check_max,
-        velocity,
-        time1
-        ):
+        velocity):
 
     """
         Place random bubble arrival locations in a way that there is no overlap
@@ -895,8 +893,8 @@ def SBG_signal(
     t_f = reader.getDataSet('fluid/time')[:]
     reader.close()
 
-    T_chunk = (20000.0/F)
-    T_buffer = max(T_chunk*0.05,5.0*control_volume_size[0]/um[0])
+    T_chunk = min(20000.0/F,1.0)
+    T_buffer = max(T_chunk*0.01,5.0*control_volume_size[0]/um[0])
     n_chunk = math.ceil(T/T_chunk)
 
     # Get start and end indices all chunks
@@ -921,7 +919,7 @@ def SBG_signal(
     writer.close()
 
     time2 = time.time()
-    print(f'Finished signal initialization. Current runtime: {time2-time1:.2f} seconds\n')
+    print(f'Finished initialization of various variables. Current runtime: {time2-time1:.2f} seconds\n')
     print('\nTracking bubbles with respect to probe.\n')
     print(f'T_chunk = {T_chunk}s.')
     print(f'T_buffer = {T_buffer}s.')
@@ -1059,6 +1057,7 @@ def SBG_signal(
         writer.write2DataSet('bubbles/mean_velocity', mean_velocities_bubble, row=start_idx_bubbles, col=0)
         writer.write2DataSet('bubbles/reynold_stresses', mean_reynolds_stresses_bubble, row=start_idx_bubbles, col=0)
         writer.write2DataSet('bubbles/turbulent_intensity', turbulent_intensities_bubble, row=start_idx_bubbles, col=0)
+        writer.write2DataSet('bubbles/pierced_bubbles', pierced_bubbles, row=start_idx_bubbles, col=0)
         writer.write2DataSet('bubbles/chord_times', chord_times_bubble, row=start_idx_bubbles, col=0)
         writer.write2DataSet('bubbles/chord_lengths', chord_lengths_bubble, row=start_idx_bubbles, col=0)
         writer.close()
@@ -1068,9 +1067,16 @@ def SBG_signal(
     print(f'Running final calulations')
     # Create reader for signal
     reader = H5Reader(path / 'binary_signal.h5')
-    # Read the signal
-    signal = reader.getDataSet('signal')[:]
+    # Read the time vector
+    t_signal = reader.getDataSet('time')[:]
+    # Read the signal time series
+    ds_signal = reader.getDataSet('signal')
+    # Get the signal
+    signal = np.array(ds_signal, dtype='int8')
+    # Get the corresponding sensor ids
+    sensor_ids = ds_signal.attrs['sensor_id']
     reader.close()
+
     C_bubbles_overlapped = cumulative_chord_times_overlap/T
     C_bubbles_pierced = cumulative_chord_times/T
     F_bubbles_pierced = n_bubbles_pierced/T
@@ -1078,12 +1084,18 @@ def SBG_signal(
     # Create the H5-file writer
     writer = H5Writer(path / 'flow_data.h5', 'a')
     # Write the bubble properties
-    writer.writeDataSet('bubbles/pierced_bubbles', pierced_bubbles, 'u1')
     writer.writeDataSet('bubbles/pierced_bubble_frequency', np.array([F_bubbles_pierced]), 'float64')
     writer.writeDataSet('bubbles/pierced_bubble_void_fraction', np.array([C_bubbles_pierced]), 'float64')
     writer.writeDataSet('bubbles/pierced_overlapped_bubble_void_fraction', np.array([C_bubbles_overlapped]), 'float64')
     writer.writeDataSet('bubbles/measured_void_fraction', np.array([C_measured]), 'float64')
     writer.close()
     time2 = time.time()
-    print(f'Successfully generated the signal')
+    print(f'Successfully generated the signal in {time2-time1:.2f} seconds.\n')
+    # Finally, compress the signal to safe storage
+    print(f'Compressing signal.')
+    write_compressed_signal(path,t_signal,signal,sensor_ids)
+    # delete full signal
+    signal_path = path / 'binary_signal.h5'
+    signal_path.unlink()
+    time2 = time.time()
     print(f'Finished in {time2-time1:.2f} seconds\n')

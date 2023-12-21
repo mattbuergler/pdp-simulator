@@ -7,6 +7,14 @@ import shutil
 from typing import List
 import numpy as np
 import math
+main=pathlib.Path(__file__).resolve().parents[1]
+sys.path.append(str(main / 'dataio'))
+try:
+    from H5Writer import H5Writer
+    from H5Reader import H5Reader
+except ImportError:
+    print('Failed to import modules')
+    raise
 """
     global variables and functions
 """
@@ -132,3 +140,57 @@ def get_git_version() -> str:
 
 def printHeader():
     print(f'MULTIPHADE {get_git_version()}\n')
+
+def compress_signal(signal):
+    signal = np.array(signal)
+    # Find the indices where the value changes
+    change_indices = np.nonzero(np.diff(signal))[0] + 1
+    # Append the initial value and change indices
+    compressed = np.insert(change_indices, 0, signal[0])
+    return compressed
+
+def decompress_signal(compressed, length):
+    signal = np.zeros(length, dtype=int)
+    signal[compressed[1:]] = 1 - signal[compressed[1:]]  # Toggle values at change points
+    signal = np.cumsum(signal) % 2  # Cumulative sum and modulo to alternate between 0 and 1
+    return signal
+
+def get_signal_frequency(t_signal):
+    f_s = 1.0/((t_signal[-1]-t_signal[0])/(len(t_signal)-1))
+    return f_s
+
+def write_compressed_signal(path,t_signal,signal,sensor_ids):
+    f_s = get_signal_frequency(t_signal)
+    length = len(t_signal)
+    compressed_signal = {}
+    for ii,sensor_id in enumerate(sensor_ids):
+        compressed_signal[sensor_id] = compress_signal(signal[:,ii])
+    # Create the H5-file writer
+    writer = H5Writer(path / 'compressed_signal.h5', 'w')
+    # Write the time vector
+    writer.writeDataSet('length', np.array([length],dtype='int32'), 'int32')
+    writer.writeDataSet('f_s', np.array([f_s],dtype='float64'), 'float64')
+    writer.writeDataSet('sensor_ids', np.array(sensor_ids,dtype='int16'), 'int16')
+    for ii,sensor_id in enumerate(sensor_ids):
+        writer.writeDataSet(f'signal{int(sensor_id)}', compressed_signal[sensor_id], 'int32')
+        ds_sig = writer.getDataSet(f'signal{int(sensor_id)}')
+        ds_sig.attrs['sensor_id'] = int(sensor_id)
+    writer.close()
+
+def read_compressed_signal(path):
+    # Create a H5-file reader
+    reader = H5Reader(path / 'compressed_signal.h5')
+    # Read the sampling frequency
+    f_s = reader.getDataSet('f_s')[:][0]
+    # Read the signal length
+    length = reader.getDataSet('length')[:][0]
+    # Get the sensor ids
+    sensor_ids = reader.getDataSet('sensor_ids')[:]
+    signal = np.empty((length,len(sensor_ids)), dtype='int8')
+    for ii,sensor_id in enumerate(sensor_ids):
+        # Read the compressed signal
+        compressed_signal = reader.getDataSet(f'signal{int(sensor_id)}')
+        signal[:,ii] = decompress_signal(compressed_signal,length)
+    reader.close()
+    t_signal = np.linspace(0,(length-1)/f_s,length)
+    return t_signal,signal,sensor_ids
