@@ -129,7 +129,7 @@
     }
   },
   "type": "object",
-  "required": ["FLOW_PROPERTIES", "PROBE", "RECONSTRUCTION", "REPRODUCIBLE"],
+  "required": ["FLOW_PROPERTIES", "PROBE", "RECONSTRUCTION", "REPRODUCIBILITY"],
   "optional": ["UNCERTAINTY_QUANTIFICATION"],
   "properties": {
     "FLOW_PROPERTIES": {
@@ -305,10 +305,22 @@
         }
       ]
     },
-    "REPRODUCIBLE": {
-      "type": "string",
+    "REPRODUCIBILITY": {
+      "type": "object",
       "description": "Define the reproducability of the process.",
-      "enum": ["yes", "no"]
+      "properties": {
+        "reproducable": {
+          "type": "string",
+          "description": "Draw random variables with fixed seed (yes/no).",
+          "enum": ["yes", "no"]
+        },
+        "seed": {
+          "type": "number",
+          "description": "The seed number.",
+          "minimum": 0.0,
+          "default": 42
+        }
+      }
     },
     "UNCERTAINTY_QUANTIFICATION": {
       "type": "object",

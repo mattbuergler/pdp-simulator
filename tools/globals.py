@@ -7,6 +7,7 @@ import shutil
 from typing import List
 import numpy as np
 import math
+
 """
     global variables and functions
 """
@@ -132,3 +133,23 @@ def get_git_version() -> str:
 
 def printHeader():
     print(f'MULTIPHADE {get_git_version()}\n')
+
+def compress_signal(signal):
+    signal = np.array(signal)
+    # Find the indices where the value changes
+    change_indices = np.nonzero(np.diff(signal))[0] + 1
+    # Append the initial value and change indices
+    compressed = np.insert(change_indices, 0, signal[0])
+    return compressed
+
+def decompress_signal(compressed, length):
+    signal = np.zeros(length, dtype=int)
+    signal[compressed[1:]] = 1 - signal[compressed[1:]]  # Toggle values at change points
+    signal = np.cumsum(signal) % 2  # Cumulative sum and modulo to alternate between 0 and 1
+    return signal
+
+def get_signal_frequency(t_signal):
+    f_s = 1.0/((t_signal[-1]-t_signal[0])/(len(t_signal)-1))
+    return f_s
+
+

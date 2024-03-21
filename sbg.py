@@ -55,6 +55,8 @@ def main():
         help="Run the velocity time series analysis.")
     parser.add_argument('-p', '--progress', action='store_true',
         help='Show progress bar.')
+    parser.add_argument('-c', '--compressed_signal', default='False',
+        help='Expect a compressed signal (True/False).')
     parser.add_argument(
         "-n",
         "--nthreads",
@@ -84,17 +86,9 @@ def main():
         sbg_functions.SBG_fluid_velocity(
             path=path,
             flow_properties=config['FLOW_PROPERTIES'],
-            reproducible=config['REPRODUCIBLE'],
+            reproducibility=config['REPRODUCIBILITY'],
             progress=args.progress
         )
-        # sbg_functions.SBG_bubble_generator(
-        #     path=path,
-        #     flow_properties=config['FLOW_PROPERTIES'],
-        #     probe=config['PROBE'],
-        #     reproducible=config['REPRODUCIBLE'],
-        #     progress=args.progress,
-        #     nthreads=int(args.nthreads)
-        # )
     if command in ["signal", 'all']:
         print('Synthetic Signal Generator (SSG)\n')
         if 'UNCERTAINTY_QUANTIFICATION' not in config:
@@ -104,10 +98,11 @@ def main():
             path=path,
             flow_properties=config['FLOW_PROPERTIES'],
             probe=config['PROBE'],
-            reproducible=config['REPRODUCIBLE'],
+            reproducibility=config['REPRODUCIBILITY'],
             uncertainty=config["UNCERTAINTY_QUANTIFICATION"],
             progress=args.progress,
-            nthreads=int(args.nthreads)
+            nthreads=int(args.nthreads),
+            compressed_signal=args.compressed_signal
             )
 
     # Plot results if necessary

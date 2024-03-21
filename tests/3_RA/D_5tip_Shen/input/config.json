@@ -64,5 +64,8 @@
         "n_particles": 10
 
     },
-    "REPRODUCIBLE": "yes"
+    "REPRODUCIBILITY": {
+        "reproducible": "yes",
+        "seed": 42
+    }
 }
