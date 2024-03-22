@@ -45,7 +45,7 @@ To install pdp-sim-tf, follow these steps:
     cd pdp-sim-tf
     ```
 
-We recomment to run pdp-sim-tf in a virtual python environment using pipenv. The installation of pipenv is described in the [documentation](docs/user/setup_python_environment.md)
+We recommend running pdp-sim-tf in a virtual python environment using pipenv. The installation of pipenv is described in the [documentation](docs/user/setup_python_environment.md).
 
 3. Install the required dependencies using pipenv:
 
@@ -64,15 +64,6 @@ We recomment to run pdp-sim-tf in a virtual python environment using pipenv. The
 ## Usage
 
 pdp-sim-tf can be used for simulating phase-detection probe measurements in turbulent bubbly flows.
-
-### Start the python-environment
-1. Open a new window of the "Windows Powershell (x86)"
-2. Navigate to the repository containing the Piplock file
-3. Start the python environment:
-
-```shell
-pipenv install --python C:\Users\Matthias\.pyenv\pyenv-win\versions\3.9.0\python.exe
-```
 
 ### Running the code
 
@@ -110,17 +101,15 @@ The synthetic signal can be processed with the Multi-Sensor Signal Processing (M
 python mssp.py path/to/simulation
 ```
 
-
-
 ## Support
 
-For support, bug reports, or feature requests, please open an issue in the [issue tracker](https://gitlab.ethz.ch/vaw/multiphade/mpd/-/issues) or contact Matthias Bürgler at buergler@vaw.baug.ethz-ch .
+For support, bug reports, or feature requests, please open an issue in the [issue tracker](https://gitlab.ethz.ch/vaw/multiphade/mpd/-/issues) or contact Matthias Bürgler at <buergler@vaw.baug.ethz-ch>.
 
 
 ## Authors and acknowledgment
 
 This software is developed by Matthias Bürgler in collaboration and under the supervision of Dr. Daniel Valero, Dr. Benjamin Hohermuth, Dr. David F. Vetsch and Prof. Dr. Robert M. Boes. Matthias Bürgler and Dr. Benjamin Hohermuth were supported by the Swiss National Science Foundation (SNSF) [grant number 197208].
-The code is inspired by previously developed stochastic bubble generators (Bung & Valero, 2017; Valero et al., 2019; Kramer, 2019; Kramer et al., 2019; Bürgler et al., 2022)).
+The code is inspired by previously developed stochastic bubble generators (\[[Bung & Valero, 2017](#References)\]; \[[Valero et al., 2019](#References)\]; \[[Kramer, 2019](#References)\]; \[[Kramer et al., 2019](#References)\]; \[[Bürgler et al., 2022](#References)\])).
 
 ## Copyright notice
 
@@ -133,26 +122,15 @@ This project is licensed under the GNU General Public License v3.0 - see the [LI
 
 ## References
 
-Bung, D. B., & Valero, D. 2017. FlowCV-An open-source toolbox for com-
-puter vision applications in turbulent flows. In *Proceedings 37th IAHR
-World Congress*, Kuala Lumpur, Malaysia, pp. 5356-5365.
+Bung, D. B., & Valero, D. 2017. FlowCV-An open-source toolbox for computer vision applications in turbulent flows. In *Proceedings 37th IAHR World Congress*, Kuala Lumpur, Malaysia, pp. 5356-5365.
 
-Bürgler, M., Hohermuth, B., Vetsch, D. F., & Boes, R. M. 2022. Compar-
-ison of Signal Processing Algorithms for Multi-Sensor Intrusive Phase-
-Detection Probes. In *Proceedings 39th IAHR World Congress*, Granada, Spain, International Association for Hydro-Environment
-Engineering and Research, pp. 5094-
-5103.
+Bürgler, M., Hohermuth, B., Vetsch, D. F., & Boes, R. M. 2022. Comparison of Signal Processing Algorithms for Multi-Sensor Intrusive Phase-Detection Probes. In *Proceedings 39th IAHR World Congress*, Granada, Spain, International Association for Hydro-Environment Engineering and Research, pp. 5094-5103.
 
-Kramer, M. 2019. Particle size distributions in turbulent air-water flows. In
-*E-Proceedings of the 38th IAHR World Congress*, pp. 5722-5731.
+Kramer, M. 2019. Particle size distributions in turbulent air-water flows. In *E-Proceedings of the 38th IAHR World Congress*, pp. 5722-5731.
 
-Kramer, M., Valero, D., Chanson, H., & Bung, D. B. 2019. Towards reliable
-turbulence estimations with phase-detection probes: an adaptive window
-cross-correlation technique. *Experiments in Fluids*, 60(1), 2.
+Kramer, M., Valero, D., Chanson, H., & Bung, D. B. 2019. Towards reliable turbulence estimations with phase-detection probes: an adaptive window cross-correlation technique. *Experiments in Fluids*, 60(1), 2.
 
-Valero, D., Kramer, M., Bung, D.B., & Chanson, H. 2019. A stochastic
-bubble generator for air water flow research. In *E-Proceedings of the 38th
-IAHR World Congress*. Panama City, Panama, pp. 5714–5721.
+Valero, D., Kramer, M., Bung, D.B., & Chanson, H. 2019. A stochastic bubble generator for air water flow research. In *E-Proceedings of the 38th IAHR World Congress*. Panama City, Panama, pp. 5714–5721.
 
 ## Citation
 
