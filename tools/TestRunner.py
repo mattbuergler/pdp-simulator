@@ -44,7 +44,6 @@ class TestRunner:
     timings = []  # type: typing.List[float]
 
     def __init__(self, config):
-        self.velocity_tsa = config['velocity_tsa']
         self.roc = config['ROC']
         self.bin = config['bin']
         self.nthreads = config['nthreads']
@@ -254,8 +253,6 @@ class TestRunner:
         cmd.append(testDef['SBG'])
         cmd.append("-n")
         cmd.append(self.nthreads)
-        if self.velocity_tsa:
-            cmd.append("-tsa")
         cmd.append(".")
         return self.runCommon(cmd, testDirectory, "a")
 
