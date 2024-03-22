@@ -1,7 +1,6 @@
 import numpy as np
 import h5py
 import time
-from dataio.H5Writer import H5Writer
 
 # Define the correlation parameters with standardized multivariate Gaussian
 # Zero mean
@@ -48,3 +47,14 @@ while (kk < n):
     vel[kk:(kk+veltmp.shape[0]),:] = veltmp
     kk+=n_chunk
 print(f"chunk wise = {vel}")
+
+# Test 4:
+np.random.seed(42)
+all_ = np.random.uniform(low=0, high=1, size=(10, 2))
+print(f"Test 4: all at once = {all_}")
+
+np.random.seed(42)
+part1_ = np.random.uniform(low=0, high=1, size=(5, 2))
+part2_ = np.random.uniform(low=0, high=1, size=(5, 2))
+print(f"Test 4: two times part 1 = {part1_}")
+print(f"Test 4: two times part 2 = {part2_}")

@@ -19,7 +19,7 @@
             {
                 "id": 0,
                 "relative_location":[
-                    0.0,
+                    -0.0005,
                     0.0,
                     0.0
                 ]
@@ -27,7 +27,7 @@
             {
                 "id": 1,
                 "relative_location":[
-                    0.001,
+                    0.0005,
                     0.0,
                     0.0002
                 ]
@@ -35,7 +35,7 @@
             {
                 "id": 2,
                 "relative_location":[
-                    0.001,
+                    0.0005,
                     -0.0001,
                     -0.0001
                 ]
@@ -43,7 +43,7 @@
             {
                 "id": 3,
                 "relative_location":[
-                    0.001,
+                    0.0005,
                     0.0001,
                     -0.0001
                 ]
@@ -55,7 +55,10 @@
         "interface_pairing": "Shen_et_al_2005",
         "n_particles" : 10
     },
-    "REPRODUCIBLE": "yes",
+    "REPRODUCIBILITY": {
+        "reproducible": "yes",
+        "seed": 42
+    },
     "UNCERTAINTY_QUANTIFICATION": {
         "VIBRATION": {
             "frequencies": [50.0, 25.0, 0.0],

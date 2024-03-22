@@ -1,8 +1,20 @@
 #!/usr/bin/env python3
 
-# author: SJP
-# date: 2018-10
-# credits: ratko
+"""
+    Filename: TestRunner.py
+    Authors: Matthias Bürgler, Daniel Valero, Benjamin Hohermuth, David F. Vetsch, Robert M. Boes
+    Date created: January 1, 2024
+    Description:
+
+    Class for running tests used for integrated testing.
+
+"""
+
+# (c) 2024 ETH Zurich, Matthias Bürgler, Daniel Valero,
+# Benjamin Hohermuth, David F. Vetsch, Robert M. Boes,
+# D-BAUG, Laboratory of Hydraulics, Hydrology and Glaciology (VAW)
+# This software is released under the the GNU General Public License v3.0.
+# https://https://opensource.org/license/gpl-3-0
 
 import os
 import re
@@ -25,9 +37,6 @@ except ImportError:
     print('Failed to import nodules')
     raise
 
-"""
-    TestRunner Class Executing and Evalulating Tests
-"""
 
 class TestRunner:
 
@@ -35,7 +44,6 @@ class TestRunner:
     timings = []  # type: typing.List[float]
 
     def __init__(self, config):
-        self.velocity_tsa = config['velocity_tsa']
         self.roc = config['ROC']
         self.bin = config['bin']
         self.nthreads = config['nthreads']
@@ -82,9 +90,6 @@ class TestRunner:
                 self.timings.append(t)
             if testConf['RA'] == 'yes':
                 t, error = self.runRA(testDirectory)
-                self.timings.append(t)
-            if testConf['eval'] == 'yes':
-                t, error = self.runEval(testDirectory)
                 self.timings.append(t)
             errors += self.compareData(testDirectory, testDef)
             testcount += len(testDef)
@@ -242,14 +247,12 @@ class TestRunner:
         # create simulation call
         cmd = [
             "python",
-            str(pathlib.Path(self.bin) / "sbg.py")
+            str(pathlib.Path(self.bin) / "stsg_ssg.py")
         ]
         cmd.append("-r")
         cmd.append(testDef['SBG'])
         cmd.append("-n")
         cmd.append(self.nthreads)
-        if self.velocity_tsa:
-            cmd.append("-tsa")
         cmd.append(".")
         return self.runCommon(cmd, testDirectory, "a")
 
@@ -257,7 +260,7 @@ class TestRunner:
         """
         run given simulation in given directory
         """
-        PRINTTITLE(" running reconstruction in %s " % str(testDirectory), "-")
+        PRINTTITLE(" running processing in %s " % str(testDirectory), "-")
         # get the filename of the runfile
         runfile = testDirectory / "run" / "config.json"
         # check for runfile
@@ -267,7 +270,7 @@ class TestRunner:
         # get a velocity estimate
         cmd = [
             "python",
-            str(pathlib.Path(self.bin) / "mssrc.py"),
+            str(pathlib.Path(self.bin) / "mssp.py"),
             "-roc",
             str(self.roc),
             "-n",
@@ -276,24 +279,6 @@ class TestRunner:
             ]
         return self.runCommon(cmd, testDirectory, "a")
 
-
-    def runEval(self, testDirectory: pathlib.Path):
-        """
-        run given simulation in given directory
-        """
-        PRINTTITLE(" running evalutation in %s " % str(testDirectory), "-")
-        # get the filename of the runfile
-        runfile = testDirectory / "run" / "config.json"
-        # check for runfile
-        if not runfile.exists():
-            PRINTERRORANDEXIT("runfile <" + str(runfile) + "> does not exists")
-        # create simulation call
-        cmd = [
-            "python",
-            str(pathlib.Path(self.bin) / "evaluate.py"),
-            "."
-        ]
-        return self.runCommon(cmd, testDirectory, "a")
 
     def runTSA(self, testDirectory: pathlib.Path):
         """

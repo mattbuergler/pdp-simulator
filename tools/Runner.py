@@ -1,3 +1,21 @@
+#!/usr/bin/env python3
+
+"""
+    Filename: Runner.py
+    Authors: Matthias Bürgler, Daniel Valero, Benjamin Hohermuth, David F. Vetsch, Robert M. Boes
+    Date created: January 1, 2024
+    Description:
+
+    Runner Class for running tests and simulations.
+
+"""
+
+# (c) 2024 ETH Zurich, Matthias Bürgler, Daniel Valero,
+# Benjamin Hohermuth, David F. Vetsch, Robert M. Boes,
+# D-BAUG, Laboratory of Hydraulics, Hydrology and Glaciology (VAW)
+# This software is released under the the GNU General Public License v3.0.
+# https://https://opensource.org/license/gpl-3-0
+
 import time
 import json
 import numpy as np
@@ -24,7 +42,6 @@ class Runner:
     timings = []  # type: typing.List[float]
 
     def __init__(self, config):
-        self.velocity_tsa = config['velocity_tsa']
         self.roc = config['ROC']
         self.bin = config['bin']
         self.nthreads = config['nthreads']
@@ -68,7 +85,7 @@ class Runner:
                 t, error = self.runSBG_sig(runDirectory)
                 errors += error
                 self.timings.append(t)
-            if self.tasks in ['full', 'mssrc']:
+            if self.tasks in ['full', 'mssp']:
                 t, error = self.runRA(runDirectory)
                 errors += error
                 self.timings.append(t)
@@ -116,7 +133,7 @@ class Runner:
         # create simulation call
         cmd = [
             "python",
-            str(pathlib.Path(self.bin) / "sbg.py")
+            str(pathlib.Path(self.bin) / "stsg_ssg.py")
         ]
         cmd.append("-r")
         cmd.append('timeseries')
@@ -138,7 +155,7 @@ class Runner:
         # create simulation call
         cmd = [
             "python",
-            str(pathlib.Path(self.bin) / "sbg.py")
+            str(pathlib.Path(self.bin) / "stsg_ssg.py")
         ]
         cmd.append("-r")
         cmd.append('signal')
@@ -151,7 +168,7 @@ class Runner:
         """
         run given simulation in given directory
         """
-        PRINTTITLE(" running reconstruction in %s " % str(runDirectory), "-")
+        PRINTTITLE(" running processing in %s " % str(runDirectory), "-")
         # get the filename of the runfile
         runfile = runDirectory / "run" / "config.json"
         # check for runfile
@@ -160,7 +177,7 @@ class Runner:
         # create simulation call
         cmd = [
             "python",
-            str(pathlib.Path(self.bin) / "mssrc.py"),
+            str(pathlib.Path(self.bin) / "mssp.py"),
             "-roc",
             str(self.roc),
             "-n",
@@ -209,24 +226,6 @@ class Runner:
         cmd.append('--ROC')
         cmd.append(str(self.roc_pp))
         cmd.append(".")
-        return self.runCommon(cmd, runDirectory, "a")
-
-    def runTSA(self, runDirectory: pathlib.Path):
-        """
-        run given simulation in given directory
-        """
-        PRINTTITLE(" running evalutation in %s " % str(runDirectory), "-")
-        # get the filename of the runfile
-        runfile = runDirectory / "run" / "config.json"
-        # check for runfile
-        if not runfile.exists():
-            PRINTERRORANDEXIT("runfile <" + str(runfile) + "> does not exists")
-        # create simulation call
-        cmd = [
-            "python",
-            str(pathlib.Path(self.bin) / "velcoity_tsa.py"),
-            "."
-        ]
         return self.runCommon(cmd, runDirectory, "a")
 
     def runCommon(

@@ -1,5 +1,23 @@
 #!/usr/bin/env python3
 
+"""
+    Filename: roc.py
+    Authors: Matthias Bürgler, Daniel Valero, Benjamin Hohermuth, David F. Vetsch, Robert M. Boes
+    Date created: January 1, 2024
+    Description:
+
+    Script for running Robust Outlier Cutoff (ROC) filtering based on the maximum absolute deviation and the 
+    universal threshold.
+
+"""
+
+# (c) 2024 ETH Zurich, Matthias Bürgler, Daniel Valero,
+# Benjamin Hohermuth, David F. Vetsch, Robert M. Boes,
+# D-BAUG, Laboratory of Hydraulics, Hydrology and Glaciology (VAW)
+# This software is released under the the GNU General Public License v3.0.
+# https://https://opensource.org/license/gpl-3-0
+
+
 import sys
 import argparse
 import pathlib
@@ -27,7 +45,9 @@ except ImportError:
 
 """
     Robust outlier cutoff based on the maximum absolute deviation and the 
-    universal threshold."""
+    universal threshold.
+
+"""
 
 def inverse_den(x):
     """

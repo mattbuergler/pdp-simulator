@@ -9,7 +9,7 @@
             "size_distribution": "constant",
             "diameter": 0.003
         },
-        "void_fraction": 0.5,
+        "void_fraction": 0.1,
         "duration": 10.0,
         "realization_frequency": 10000
     },
@@ -19,7 +19,7 @@
             {
                 "id": 0,
                 "relative_location":[
-                    0.0,
+                    -0.0005,
                     0.0,
                     0.0
                 ]
@@ -27,7 +27,7 @@
             {
                 "id": 1,
                 "relative_location":[
-                    0.001,
+                    0.0005,
                     0.0,
                     0.0002
                 ]
@@ -35,7 +35,7 @@
             {
                 "id": 2,
                 "relative_location":[
-                    0.001,
+                    0.0005,
                     -0.0001,
                     -0.0001
                 ]
@@ -43,7 +43,7 @@
             {
                 "id": 3,
                 "relative_location":[
-                    0.001,
+                    0.0005,
                     0.0001,
                     -0.0001
                 ]
@@ -55,5 +55,8 @@
         "interface_pairing": "Shen_et_al_2005",
         "n_particles": 10
     },
-    "REPRODUCIBLE": "yes"
+    "REPRODUCIBILITY": {
+        "reproducible": "yes",
+        "seed": 42
+    }
 }
