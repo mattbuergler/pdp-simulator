@@ -103,13 +103,13 @@ python mssp.py path/to/simulation
 
 ## Support
 
-For support, bug reports, or feature requests, please open an issue in the [issue tracker](https://gitlab.ethz.ch/vaw/multiphade/mpd/-/issues) or contact Matthias Bürgler at <buergler@vaw.baug.ethz-ch>.
+For support, bug reports, or feature requests, please open an issue in the [issue tracker](https://gitlab.ethz.ch/vaw/multiphade/mpd/-/issues) or contact Matthias Bürgler at <buergler@vaw.baug.ethz.ch>.
 
 
 ## Authors and acknowledgment
 
 This software is developed by Matthias Bürgler in collaboration and under the supervision of Dr. Daniel Valero, Dr. Benjamin Hohermuth, Dr. David F. Vetsch and Prof. Dr. Robert M. Boes. Matthias Bürgler and Dr. Benjamin Hohermuth were supported by the Swiss National Science Foundation (SNSF) [grant number 197208].
-The code is inspired by previously developed stochastic bubble generators (\[[Bung & Valero, 2017](#References)\]; \[[Valero et al., 2019](#References)\]; \[[Kramer, 2019](#References)\]; \[[Kramer et al., 2019](#References)\]; \[[Bürgler et al., 2022](#References)\])).
+The code is inspired by previously developed stochastic bubble generators (\[Bung & Valero, 2017(#References)\]; \[Valero et al., 2019(#References)\]; \[Kramer, 2019(#References)\]; \[Kramer et al., 2019(#References)\]; \[Bürgler et al., 2022(#References)\])).
 
 ## Copyright notice
 
