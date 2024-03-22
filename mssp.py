@@ -1,5 +1,45 @@
 #!/usr/bin/env python3
 
+"""
+    Filename: mssp.py
+    Authors: Matthias Bürgler, Daniel Valero, Benjamin Hohermuth, David F. Vetsch, Robert M. Boes
+    Date created: January 1, 2024
+    Description:
+        Multi-Sensor Signal Processing (MSSP)
+        The user-defined parameters are passed via the input_file (JSON).
+        A time series is generated and saved to a file.
+
+        Literature:
+            - Shen, X., Saito, Y., Mishima, K., & Nakamura, H. (2005). Methodological
+                improvement of an intrusive four-sensor probe for the multi-dimensional
+                two-phase flow measurement. International Journal of Multiphase Flow,
+                31(5), 593–617. https://doi.org/10.1016/j.ijmultiphaseflow.2005.02.003
+
+            - Shen, X., & Nakamura, H. (2014). Spherical-bubble-based four-sensor probe
+                signal processing algorithm for two-phase flow measurement. International
+                Journal of Multiphase Flow, 60, 11–29. 
+                https://doi.org/10.1016/j.ijmultiphaseflow.2013.11.010
+
+            - Kramer, M., Valero, D., Chanson, H., & Bung, D. B. 2019. Towards reliable
+                turbulence estimations with phase-detection probes: an adaptive window
+                cross-correlation technique. Experiments in Fluids, 60(1), 2.
+
+            - Kramer, M., Hohermuth, B., Valero, D., & Felder, S. 2020. Best practices
+                for velocity estimations in highly aerated flows with dual-tip
+                phase-detection probes. International Journal of Multiphase Flow, 126, 103228.
+            - Kramer, M., Hohermuth, B., Valero, D., & Felder, S. (2020). Leveraging event
+                detection techniques and cross-correlation analysis for phase-detection probe
+                measurements in turbulent air-water flows.
+
+"""
+
+# (c) 2024 ETH Zurich, Matthias Bürgler, Daniel Valero,
+# Benjamin Hohermuth, David F. Vetsch, Robert M. Boes,
+# D-BAUG, Laboratory of Hydraulics, Hydrology and Glaciology (VAW)
+# This software is released under the the GNU General Public License v3.0.
+# https://https://opensource.org/license/gpl-3-0
+
+
 import sys
 import argparse
 import pathlib
@@ -28,18 +68,6 @@ except ImportError:
     print("Error while importing modules")
     raise
 
-
-"""
-    Multi-Sensor Signal ReConstructor (MSSRC)
-
-    The user-defined parameters are passed via the input_file (JSON).
-    A time series is generated and saved to a file.
-
-    Literature:
-    Shen, X., Saito, Y., Mishima, K., & Nakamura, H. (2005). Methodological improvement of an intrusive four-sensor probe for the multi-dimensional two-phase flow measurement. International Journal of Multiphase Flow, 31(5), 593–617. https://doi.org/10.1016/j.ijmultiphaseflow.2005.02.003
-
-    Shen, X., & Nakamura, H. (2014). Spherical-bubble-based four-sensor probe signal processing algorithm for two-phase flow measurement. International Journal of Multiphase Flow, 60, 11–29. https://doi.org/10.1016/j.ijmultiphaseflow.2013.11.010
-"""
 
 # Define global variables
 COEFF_0 = Decimal(0.3)   # Eq. (43) in Shen et al. (2005): low limit constant
@@ -97,7 +125,9 @@ def calc_det(mat):
     """
         Takes a matrix as and argument and returns the determinant
 
-        In this function, the configuration JSON-File and the the signal data are parsed. The from the signal time series, the local velocities, the void fraction, the bubble diameters and the interfacial area density are recovered by a reconstruction algorithm.
+        In this function, the configuration JSON-File and the the signal data are parsed.
+        The from the signal time series, the local velocities, the void fraction, the 
+        bubble diameters and the interfacial area density are recovered by a proccesing algorithm.
     """
     a = mat[0][0]
     b = mat[0][1]
@@ -1026,7 +1056,7 @@ def multi_tip_signal_processing(ii, bubble_props, S_0k, S_0k_mag, cos_eta_0k, nb
     # Check how many sensors recorded a valid signal
     sensors_valid = bubble_props['aux_sensors_complete']
     n_sensors_valid = len(sensors_valid)
-    # can only do reconstruction with 3 or more sensors
+    # can only do proccesing with 3 or more sensors
     if (n_sensors_valid >= 3):
         # get possible
         sensor_combs = combinations(sensors_valid, 3)
@@ -1036,7 +1066,7 @@ def multi_tip_signal_processing(ii, bubble_props, S_0k, S_0k_mag, cos_eta_0k, nb
         iac = np.ones(n_sensors_valid)*math.nan
         for jj,sensor_comb in enumerate(list(sensor_combs)):
             if ra_type == "Shen_Nakamura_2014":
-                # Reconstruction algorithm of Shen and Nakamura (2014)
+                # Proccesing algorithm of Shen and Nakamura (2014)
                 # https://doi.org/10.1016/j.ijmultiphaseflow.2013.11.010
                 vel[jj,:],diam[jj,:],_,iac[jj] =\
                         run_sig_proc_shen(args,
@@ -1045,7 +1075,7 @@ def multi_tip_signal_processing(ii, bubble_props, S_0k, S_0k_mag, cos_eta_0k, nb
                                         S_0k_mag,
                                         cos_eta_0k)
             elif ra_type == "Tian_et_al_2015":
-                # Reconstruction algorithm of Tian et al. (2015)
+                # Proccesing algorithm of Tian et al. (2015)
                 # https://doi.org/10.1016/j.pnucene.2014.08.005
                 vel[jj,:],diam[jj,:],_,iac[jj] =\
                         run_sig_proc_tian(args,
@@ -1054,7 +1084,7 @@ def multi_tip_signal_processing(ii, bubble_props, S_0k, S_0k_mag, cos_eta_0k, nb
                                         S_0k_mag,
                                         S_0k)
             else:
-                PRINTERRORANDEXIT(f'Reconstruction algorithm '+\
+                PRINTERRORANDEXIT(f'Proccesing algorithm '+\
                     '<{ra_type}> not valid for 4-tip probes.')
         # Store the computed bubble properties
         bubble_props['velocity'] = np.nanmean(vel, axis=0)
@@ -1148,16 +1178,47 @@ def get_awcc_properties(path, args, config, sensor_ids, duration, signal):
 
 def main():
     """
-        Main function of the Stochastic Bubble Generator (SBG)
+        Main function of the Multi-Sensor Signal Processing.
 
-        In this function, the configuration JSON-File and the the signal data are parsed. The from the signal time series, the local velocities, the void fraction, the bubble diameters and the interfacial area density are recovered by a reconstruction algorithm.
+        In this function, the configuration JSON-File and the the signal data are parsed.
+        The from the signal time series, the local velocities, the void fraction, the 
+        bubble diameters and the interfacial area density are recovered by a processing algorithm.
     """
 
     # Start timer
     time1 = time.time()
     # Create parser to read in the configuration JSON-file to read from
     # the command line interface (CLI)
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="""\
+        Multi-Sensor Signal Processing (MSSP)
+        The user-defined parameters are passed via the input_file (JSON).
+        A time series is generated and saved to a file.
+
+        Literature:
+            - Shen, X., Saito, Y., Mishima, K., & Nakamura, H. (2005). Methodological
+                improvement of an intrusive four-sensor probe for the multi-dimensional
+                two-phase flow measurement. International Journal of Multiphase Flow,
+                31(5), 593–617. https://doi.org/10.1016/j.ijmultiphaseflow.2005.02.003
+
+            - Shen, X., & Nakamura, H. (2014). Spherical-bubble-based four-sensor probe
+                signal processing algorithm for two-phase flow measurement. International
+                Journal of Multiphase Flow, 60, 11–29. 
+                https://doi.org/10.1016/j.ijmultiphaseflow.2013.11.010
+
+            - Kramer, M., Valero, D., Chanson, H., & Bung, D. B. 2019. Towards reliable
+                turbulence estimations with phase-detection probes: an adaptive window
+                cross-correlation technique. Experiments in Fluids, 60(1), 2.
+
+            - Kramer, M., Hohermuth, B., Valero, D., & Felder, S. 2020. Best practices
+                for velocity estimations in highly aerated flows with dual-tip
+                phase-detection probes. International Journal of Multiphase Flow, 126, 103228.
+            - Kramer, M., Hohermuth, B., Valero, D., & Felder, S. (2020). Leveraging event
+                detection techniques and cross-correlation analysis for phase-detection probe
+                measurements in turbulent air-water flows.
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+        )
     parser.add_argument('path', type=str,
         help="The path to the scenario directory.")
     parser.add_argument('-roc', '--ROC', default='False',
@@ -1177,7 +1238,7 @@ def main():
     args = parser.parse_args()
 
     printHeader()
-    print('Multi-Sensors Signal Reconstruction (MSSRC)\n')
+    print('Multi-Sensors Signal Processing (MSSP)\n')
 
     global V_GAS
 
@@ -1209,7 +1270,7 @@ def main():
     # the sampling duration
     duration = t_signal[-1]-t_signal[0]
     n_sensors = len(sensor_ids)
-    # Check the reconstruction algorithm type
+    # Check the proccesing algorithm type
     ra_type = config['RECONSTRUCTION']['type']
     # Check the interface-pairing signal processing algorithm
     bubbles_complete = []
@@ -1273,10 +1334,10 @@ def main():
             # interfacial area concentration cannot be estimated with AWCC
             IAC = math.nan
         else:
-            PRINTERRORANDEXIT(f'Reconstruction algorithm <{ra_type}> not valid for 2-tip probes.')
+            PRINTERRORANDEXIT(f'Proccesing algorithm <{ra_type}> not valid for 2-tip probes.')
 
     elif (n_sensors >= 4):
-        # Reconstruction algorithm for 4 or more sensors
+        # Proccesing algorithm for 4 or more sensors
         print('Running AWCC to get initial velocity estimate for iterface pairing.\n')
 
         weighted_mean_velocity_awcc,mean_reynolds_stress_awcc = get_awcc_properties(path,
@@ -1456,7 +1517,7 @@ def main():
     writer.writeDataSet('bubbles/data_rate', data_rate, 'float64')
     writer.close()
     time2 = time.time()
-    print(f'Successfully run the reconstruction algorithm')
+    print(f'Successfully run the proccesing algorithm')
     print(f'Finished in {time2-time1:.2f} seconds\n')
 
 if __name__ == "__main__":

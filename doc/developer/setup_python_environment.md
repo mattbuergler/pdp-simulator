@@ -1,4 +1,4 @@
-# Requirements
+# Setup a virtual python environment with Pipenv
 
 ## Ubuntu/Debian
 
@@ -44,7 +44,7 @@ https://realpython.com/pipenv-guide/
 pip install pipenv
 ```
 
-## Windows 10
+## Windows
 
 ### Install Python 3.9.0
 
@@ -92,13 +92,3 @@ https://www.pythontutorial.net/python-basics/install-pipenv-windows/
 Add the following variable to the User Environment Variables
 PIPENV_VENV_IN_PROJECT=1
 
-# Running the code
-
-## Start the python-environment
-1. Open a new window of the "Windows Powershell (x86)"
-2. Navigate to the repository containing the Piplock file
-3. Start the python environment:
-
-```shell
-pipenv install --python C:\Users\Matthias\.pyenv\pyenv-win\versions\3.9.0\python.exe
-```

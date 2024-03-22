@@ -1,11 +1,20 @@
 #!/bin/bash
-#
-# script to restore rerun tests
-#
-# pass the test case as an argument
-# e.g.. ./restore_rerun_files.sh 4_restart/F_rerun
-#
-# by SJP,2018
+
+#    Filename: restore_initial_conditions.sh
+#    Authors: Matthias Bürgler, Daniel Valero, Benjamin Hohermuth, David F. Vetsch, Robert M. Boes
+#    Date created: January 1, 2024
+#    Description:
+
+#    Script to restore rerun tests
+#    Pass the test case as an argument, e.g.:
+#    ./restore_rerun_files.sh 3_RA/A_Triangular_Shen
+
+# (c) 2024 ETH Zurich, Matthias Bürgler, Daniel Valero,
+# Benjamin Hohermuth, David F. Vetsch, Robert M. Boes,
+# D-BAUG, Laboratory of Hydraulics, Hydrology and Glaciology (VAW)
+# This software is released under the the GNU General Public License v3.0.
+# https://https://opensource.org/license/gpl-3-0
+
 
 directory=$1
 subdirectories=()
@@ -31,7 +40,7 @@ for subdir in "${subdirectories[@]}"; do
 	  rm -r $group/$test'/run'
 	  mkdir $group/$test'/run'
 	  cp -r $group/$test'/input/config.json' $group/$test'/run/'
-	  python ../sbg.py -r timeseries -n 1 $group/$test'/run'
+	  python ../stsg_ssg.py -r timeseries -n 1 $group/$test'/run'
 	  cp $group/$test'/run/flow_data.h5' $group/$test'/input/'
 	  rm -r $group/$test'/run'
 	fi
@@ -41,7 +50,7 @@ for subdir in "${subdirectories[@]}"; do
 	  rm -r $group/$test'/run'
 	  mkdir $group/$test'/run'
 	  cp -r $group/$test'/input/config.json' $group/$test'/run/'
-	  python ../sbg.py -r all -n 1 $group/$test'/run'
+	  python ../stsg_ssg.py -r all -n 1 $group/$test'/run'
 	  cp $group/$test'/run/binary_signal.h5' $group/$test'/input/'
 	  rm -r $group/$test'/run'
 	fi

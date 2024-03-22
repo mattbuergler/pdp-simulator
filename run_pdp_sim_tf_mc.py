@@ -1,9 +1,20 @@
-"""Run BASEMENT for all models in the current working directory.
+#!/usr/bin/env python3
 
-This version is largely identical to the Bash (.sh) and Batch (.bat)
-versions, but uses Python as a cross-platform alternative. It also
-features more thorough error checking and status reporting.
 """
+    Filename: run_pdp_sim_tf_mc.py
+    Authors: Matthias Bürgler, Daniel Valero, Benjamin Hohermuth, David F. Vetsch, Robert M. Boes
+    Date created: January 1, 2024
+    Description: 
+
+    Framework for running the pdp-sim-tf in a monte-carlo mode.
+
+"""
+
+# (c) 2024 ETH Zurich, Matthias Bürgler, Daniel Valero,
+# Benjamin Hohermuth, David F. Vetsch, Robert M. Boes,
+# D-BAUG, Laboratory of Hydraulics, Hydrology and Glaciology (VAW)
+# This software is released under the the GNU General Public License v3.0.
+# https://https://opensource.org/license/gpl-3-0
 
 import argparse
 import os
@@ -69,7 +80,18 @@ def writePassed(path: pathlib.Path):
         file.write("1")
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="""\
+        Framework for running of phase-detection probe simulations for turbulent flows
+        in monte-carlo mode.
+
+        1. Every simulation is given in a separate directory
+        2. the directory content is given by
+            - input/  the unmodified input data (config.json)
+            - run/    the directory where input data is copied to and executed
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument(
         '--model_runs_path', '-m', type=str, default='',
         help='Path to the model runs.')
@@ -111,7 +133,7 @@ if __name__ == '__main__':
             # timeseries
             cmd: List[str] = [
                 'python',
-                os.path.join(mpd_bin, 'sbg.py'),
+                os.path.join(mpd_bin, 'stsg_ssg.py'),
                 '-r', 'timeseries',
                 '-n', '1',
                 '.']
@@ -123,19 +145,19 @@ if __name__ == '__main__':
                 task = 'signal'
                 cmd = [
                     'python',
-                    os.path.join(mpd_bin, 'sbg.py'),
+                    os.path.join(mpd_bin, 'stsg_ssg.py'),
                     '-r', 'signal',
                     '--compressed_signal', 'True',
                     '-n', '1',
                     '.']
                 print(f'  Task 2 of 4: {task}')
                 err = _run_as_task(task, path, cmd)
-            # reconstruction
+            # signal processing
             if not err:
-                task = 'reconstruction'
+                task = 'processing'
                 cmd = [
                     'python',
-                    os.path.join(mpd_bin, 'mssrc.py'),
+                    os.path.join(mpd_bin, 'mssp.py'),
                     '-roc', str(roc),
                     '-n', '1',
                     '--compressed_signal', 'True',

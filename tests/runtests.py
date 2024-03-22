@@ -1,5 +1,21 @@
 #!/usr/bin/env python3
 
+"""
+    Filename: runtests.py
+    Authors: Matthias Bürgler, Daniel Valero, Benjamin Hohermuth, David F. Vetsch, Robert M. Boes
+    Date created: January 1, 2024
+    Description:
+
+    Class for running tests used for integrated testing.
+
+"""
+
+# (c) 2024 ETH Zurich, Matthias Bürgler, Daniel Valero,
+# Benjamin Hohermuth, David F. Vetsch, Robert M. Boes,
+# D-BAUG, Laboratory of Hydraulics, Hydrology and Glaciology (VAW)
+# This software is released under the the GNU General Public License v3.0.
+# https://https://opensource.org/license/gpl-3-0
+
 import os
 import sys
 import time
@@ -26,7 +42,7 @@ except ImportError:
     raise
 
 """
-    simple integrated testing
+    Simple integrated testing
 
     1. every test setup is given in a separate directory
     2. the directory content is given by
@@ -34,6 +50,7 @@ except ImportError:
          - run/    the directory where input data is copied to and executed
          - ref/    the reference output (so a copy of an older run/ directory)
          - testdef is the file defining the files and columns that should be compared
+
 """
 
 if __name__ != "main":
@@ -81,10 +98,8 @@ if __name__ != "main":
         metavar="bin",
         type=str,
         default=str(pathlib.Path(__file__).resolve().parent.parent),
-        help="diretories that contain the functions (e.g. sbg.py, mssrc.py, etc.)",
+        help="diretories that contain the functions (e.g. stsg_ssg.py, mssp.py, etc.)",
     )
-    parser.add_argument('-tsa', '--velocity_tsa', action='store_true',
-        help="Vizualize the results.", default=False)
     parser.add_argument('-roc', '--ROC', default=False,
         help='Perform robust outlier cutoff (ROC) based on the maximum' +
                 'absolute deviation and the universal threshold (True/False).')
@@ -92,7 +107,6 @@ if __name__ != "main":
     start_time = time.time()
     errors = 0
     config = {}
-    config['velocity_tsa'] = args["velocity_tsa"]
     config['ROC'] = args["ROC"]
     config['bin'] = args["bin"]
     config['nthreads'] = str(args["nthreads"])

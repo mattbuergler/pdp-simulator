@@ -1,5 +1,25 @@
 #!/usr/bin/env python3
 
+"""
+    Filename: run_pdp_sim_tf.py
+    Authors: Matthias Bürgler, Daniel Valero, Benjamin Hohermuth, David F. Vetsch, Robert M. Boes
+    Date created: January 1, 2024
+    Description:
+
+    Script for running the various steps of a phase-detection probe simulations.
+    The possible steps include:
+        - stochastic time series generation
+        - synthetic signal generation
+        - processing of the signal
+
+"""
+
+# (c) 2024 ETH Zurich, Matthias Bürgler, Daniel Valero,
+# Benjamin Hohermuth, David F. Vetsch, Robert M. Boes,
+# D-BAUG, Laboratory of Hydraulics, Hydrology and Glaciology (VAW)
+# This software is released under the the GNU General Public License v3.0.
+# https://https://opensource.org/license/gpl-3-0
+
 import os
 import sys
 import time
@@ -13,7 +33,6 @@ import socket
 import collections
 import typing
 import subprocess
-
 main=pathlib.Path(__file__).resolve().parents[0]
 tools=main / 'tools'
 dataio=main / 'dataio'
@@ -32,19 +51,26 @@ except ImportError:
 
 
 """
-    simple running of multi-phase-detection simulation
+    Tool for running of phase-detection probe simulations in turbulent flows
 
-    1. every run setup is given in a separate directory
+    1. Every simulation is given in a separate directory
     2. the directory content is given by
-         - input/  the unmodified input data
+         - input/  the unmodified input data (config.json)
          - run/    the directory where input data is copied to and executed
 """
 
 if __name__ != "main":
 
     parser = argparse.ArgumentParser(
-        description="TESTING FRAMEWORK FOR THE STOCHASTIC BUBBLE GENERATOR",
-        formatter_class=argparse.RawTextHelpFormatter,
+        description="""\
+        Framework for running of phase-detection probe simulations in turbulent flows
+
+        1. Every simulation is given in a separate directory
+        2. the directory content is given by
+            - input/  the unmodified input data (config.json)
+            - run/    the directory where input data is copied to and executed
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "runs",
@@ -65,7 +91,7 @@ if __name__ != "main":
         metavar="bin",
         type=str,
         default=str(pathlib.Path(__file__).resolve().parent),
-        help="diretories that contain the functions (e.g. sbg.py, mssrc.py, etc.)",
+        help="diretories that contain the functions (e.g. stsg_ssg.py, mssp.py, etc.)",
     )
     parser.add_argument(
         "-r", "--run",
@@ -74,7 +100,7 @@ if __name__ != "main":
         + "full        - timeseries and signal generation, signal processing and evaluation\n"
         + "timeseries  - timeseries generation\n"
         + "signal      - signal generation\n"
-        + "mssrc       - signal processing\n"
+        + "mssp        - signal processing\n"
         + "evaluation  - run evaluation (mostly figure plotting)",
     )
     parser.add_argument(
@@ -99,8 +125,6 @@ if __name__ != "main":
         + "max_med    - based on mean from awcc and median deviation of velocity time series values larger than the mean.\n"
         + "none       - no filtering.\n"
     )
-    parser.add_argument('-tsa', '--velocity_tsa', action='store_true',
-        help="Vizualize the results.", default=False)
     parser.add_argument('-roc', '--ROC', default=False, metavar='BOOL',
         help='Perform robust outlier cutoff (ROC) based on the maximum' +
                 'absolute deviation and the universal threshold (True/False).')
@@ -109,7 +133,6 @@ if __name__ != "main":
     errors = 0
     config = {}
     config['run'] = args["run"]
-    config['velocity_tsa'] = args["velocity_tsa"]
     config['ROC'] = args["ROC"]
     config['bin'] = args["bin"]
     config['nthreads'] = str(args["nthreads"])
@@ -122,7 +145,7 @@ if __name__ != "main":
 
     runner.displayNumRuns()
     if args["run"]:
-        if not args["run"] in ["full", "timeseries", "signal", "mssrc", "evaluation"]:
+        if not args["run"] in ["full", "timeseries", "signal", "mssp", "evaluation"]:
             PRINTERRORANDEXIT("Option <" + args["run"] + "> does not exist")
         error = runner.run()
         errors += error

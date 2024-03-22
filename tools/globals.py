@@ -1,5 +1,21 @@
 #!/usr/bin/env python3
 
+"""
+    Filename: globals.py
+    Authors: Matthias Bürgler, Daniel Valero, Benjamin Hohermuth, David F. Vetsch, Robert M. Boes
+    Date created: January 1, 2024
+    Description:
+
+    Script including globally used variables and functions.
+
+"""
+
+# (c) 2024 ETH Zurich, Matthias Bürgler, Daniel Valero,
+# Benjamin Hohermuth, David F. Vetsch, Robert M. Boes,
+# D-BAUG, Laboratory of Hydraulics, Hydrology and Glaciology (VAW)
+# This software is released under the the GNU General Public License v3.0.
+# https://https://opensource.org/license/gpl-3-0
+
 import sys
 import pathlib
 import subprocess

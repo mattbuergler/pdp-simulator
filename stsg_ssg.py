@@ -1,5 +1,20 @@
 #!/usr/bin/env python3
 
+"""
+    Filename: stsg_ssg.py
+    Authors: Matthias Bürgler, Daniel Valero, Benjamin Hohermuth, David F. Vetsch, Robert M. Boes
+    Date created: January 1, 2024
+    Description:
+
+        Stochastic Time Series Generator and Synthetic Signal Generator (STSG-SSG)
+"""
+
+# (c) 2024 ETH Zurich, Matthias Bürgler, Daniel Valero,
+# Benjamin Hohermuth, David F. Vetsch, Robert M. Boes,
+# D-BAUG, Laboratory of Hydraulics, Hydrology and Glaciology (VAW)
+# This software is released under the the GNU General Public License v3.0.
+# https://https://opensource.org/license/gpl-3-0
+
 import sys
 import argparse
 import pathlib
@@ -11,34 +26,40 @@ import time
 import matplotlib as plt
 
 try:
-    import sbg_functions
-    import velocity_tsa
+    import stsg_ssg_functions
     from tools.globals import *
 except ImportError:
     print("")
     raise
 
 
-"""
-    Stochastic Bubble Generator (SBG)
 
-    The user-defined parameters are passed via the input_file (JSON).
-    A time series is generated and saved to a file.
-"""
 def main():
     """
-        Main function of the Stochastic Bubble Generator (SBG)
+        Stochastic Time Series Generator and Synthetic Signal Generator (STSG-SSG)
 
         In this function, the configuration JSON-File is parsed, the
-        stochastic time series are generated and the synthetic Signal
-        is calculated. The signal time series are then written to the output
+        stochastic time series are generated and the synthetic signal
+        is generated. The signal time series are then written to the output
         file.
     """
 
     # Create parser to read in the configuration JSON-file to read from
     # the command line interface (CLI)
 
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="""\
+        Stochastic Time Series Generator and Synthetic Signal Generator (STSG-SSG)
+
+        The flow properties and probe-characteristics are passed via
+        the input_file (JSON). The configuration JSON-File is parsed, the
+        stochastic time series are generated and the synthetic signal
+        is generated. The signal time series are then written to the output
+        file.
+
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument('path', type=str,
         help="The path to the scenario directory.")
     parser.add_argument(
@@ -47,12 +68,10 @@ def main():
         metavar="COMMAND",
         default=None,
         help="the following commands are available:\n"
-        + "timeseries - create only the velocity time series and trajectory\n"
-        + "signal     - create only the probe signal from existing velocity time series and trajectory\n"
-        + "all        - create velocity time series, trajectory and also the probe signal\n"
+        + "timeseries - create only the velocity time series\n"
+        + "signal     - create only the probe signal from existing velocity time series\n"
+        + "all        - create velocity time series, and also the probe signal\n"
     )
-    parser.add_argument('-tsa', '--velocity_tsa', action='store_true',
-        help="Run the velocity time series analysis.")
     parser.add_argument('-p', '--progress', action='store_true',
         help='Show progress bar.')
     parser.add_argument('-c', '--compressed_signal', default='False',
@@ -83,7 +102,7 @@ def main():
     if command in ["timeseries", 'all']:
         print('Stochastic Time Series Generator (STSG)\n')
         # Generate the stochastic velocity and trajectory time series
-        sbg_functions.SBG_fluid_velocity(
+        stsg_ssg_functions.SBG_fluid_velocity(
             path=path,
             flow_properties=config['FLOW_PROPERTIES'],
             reproducibility=config['REPRODUCIBILITY'],
@@ -94,7 +113,7 @@ def main():
         if 'UNCERTAINTY_QUANTIFICATION' not in config:
             config['UNCERTAINTY_QUANTIFICATION'] = {}
         # Generate the probe signal
-        sbg_functions.SBG_signal(
+        stsg_ssg_functions.SBG_signal(
             path=path,
             flow_properties=config['FLOW_PROPERTIES'],
             probe=config['PROBE'],
@@ -104,10 +123,6 @@ def main():
             nthreads=int(args.nthreads),
             compressed_signal=args.compressed_signal
             )
-
-    # Plot results if necessary
-    if args.velocity_tsa:
-        velocity_tsa.main(str(path))
 
 if __name__ == "__main__":
     main()

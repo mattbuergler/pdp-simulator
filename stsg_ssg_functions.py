@@ -1,5 +1,24 @@
 #!/usr/bin/env python3
 
+"""
+    Filename: stsg_ssg_functions.py
+    Authors: Matthias Bürgler, Daniel Valero, Benjamin Hohermuth, David F. Vetsch, Robert M. Boes
+    Date created: January 1, 2024
+    Description: 
+
+    Functions of the Stochastic Time Series and Synthetic Signal Generator (STSG-SSG)
+
+    The user-defined parameters are passed via the input_file (JSON).
+    A time series is generated and saved to a file.
+
+"""
+
+# (c) 2024 ETH Zurich, Matthias Bürgler, Daniel Valero,
+# Benjamin Hohermuth, David F. Vetsch, Robert M. Boes,
+# D-BAUG, Laboratory of Hydraulics, Hydrology and Glaciology (VAW)
+# This software is released under the the GNU General Public License v3.0.
+# https://https://opensource.org/license/gpl-3-0
+
 import numpy as np
 import pandas as pd
 import bisect
@@ -19,6 +38,7 @@ try:
 except ImportError:
     print("Error while importing modules")
     raise
+
 
 def write_compressed_signal(path,t_signal,signal,sensor_ids):
     f_s = get_signal_frequency(t_signal)
