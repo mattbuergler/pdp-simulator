@@ -45,7 +45,7 @@ To install pdp-sim-tf, follow these steps:
     cd pdp-sim-tf
     ```
 
-We recommend running pdp-sim-tf in a virtual python environment using pipenv. The installation of pipenv is described in the [documentation](docs/user/setup_python_environment.md).
+We recommend running pdp-sim-tf in a virtual python environment using pipenv. The installation of pipenv is described in the [documentation](doc/user/setup_python_environment.md).
 
 3. Install the required dependencies using pipenv:
 
