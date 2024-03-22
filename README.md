@@ -13,7 +13,7 @@ This repository is structured as follows:
 - **stsg_ssg.py:** Stochastic Bubble Generator (STSG-SSG).
 - **stsg_ssg_functions.py:** Functions used by the STSG-SSG.
 - **mssp.py:** Multi-Sensor Signal Processing (MSSP).
-- **run.py:** Tool for velocity time series analysis.
+- **run_pdp_sim_tf.py:** Script for running the various steps of a phase-detection probe simulations.
 
 ## Getting Started
 
