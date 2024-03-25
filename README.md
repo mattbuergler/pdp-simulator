@@ -10,7 +10,7 @@ This repository is structured as follows:
 - **tests:** Unit tests, feature tests, model tests.
 - **tools:** Python scripts for building and testing.
 - **Pipfile:** Definition of the Python environment via *pipenv*.
-- **stsg_ssg.py:** Stochastic Bubble Generator (STSG-SSG).
+- **stsg_ssg.py:** Stochastic Timeseries Generator and Synthetic Signal Generator (STSG-SSG).
 - **stsg_ssg_functions.py:** Functions used by the STSG-SSG.
 - **mssp.py:** Multi-Sensor Signal Processing (MSSP).
 - **run_pdp_sim_tf.py:** Script for running the various steps of a phase-detection probe simulations.
