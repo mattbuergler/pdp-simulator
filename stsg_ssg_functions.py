@@ -367,7 +367,7 @@ def SBG_fluid_velocity(path, flow_properties, reproducibility, progress):
     writer.createDataSet('fluid/trajectory', (n,3), 'float64')
     writer.writeDataSet('fluid/time', t, 'float64')
     # Initialize with mean flow velocity and write to file
-    u_f_old = np.empty((1,3)) * np.NaN
+    u_f_old = np.empty((1,3)) * np.nan
     u_f_old[0,:] = um
     writer.write2DataSet('fluid/velocity', u_f_old, row=0, col=0)
     # Initialize trajectory
@@ -380,8 +380,8 @@ def SBG_fluid_velocity(path, flow_properties, reproducibility, progress):
         # Create multivariate normal random variables for chunk
         R = np.random.multivariate_normal(mean, cov, n_chunk)
         # Initialize the velocity and trajectory arrays
-        u_f = np.empty((n_chunk,3)) * np.NaN
-        x_f = np.empty((n_chunk,3)) * np.NaN
+        u_f = np.empty((n_chunk,3)) * np.nan
+        x_f = np.empty((n_chunk,3)) * np.nan
         # First velocity vector depends on old chunk
         u_f[0,:] = SBG_dt_corr(u_f_old[0,:], um, sigma, T, dt, R[0,:])
         # First trajectory vector depends on old chunk

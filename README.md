@@ -19,15 +19,17 @@ This repository is structured as follows:
 
 ### Prerequisites
 
-The pdp-sim-tf requires the following dependencies:
-- numpy==1.26.1
-- pandas==2.1.1
-- h5py==3.10.0
-- joblib==1.3.2
-- jsonschema==4.19.1
-- matplotlib==3.8.0
+The pdp-sim requires the following dependencies:
+- python==3.11.0
+- numpy==2.1.1
+- pandas==2.2.2
+- h5py==3.11.0
+- joblib==1.4.2
+- jsonschema==4.23.0
+- matplotlib==3.9.2
 - pathlib==1.0.1
-- scipy==1.11.3
+- scipy==1.14.1
+- statsmodels==0.14.2
 
 ### Installation
 
@@ -45,7 +47,7 @@ To install pdp-sim, follow these steps:
     cd pdp-sim
     ```
 
-We recommend running pdp-sim-tf in a virtual python environment using pipenv. The installation of pipenv is described in the [documentation](doc/user/setup_python_environment.md).
+We recommend running pdp-sim in a virtual python environment using pipenv. The installation of pipenv is described in the [documentation](doc/user/setup_python_environment.md).
 
 3. Install the required dependencies using pipenv:
 
@@ -126,7 +128,7 @@ Bung, D. B., & Valero, D. 2017. FlowCV-An open-source toolbox for computer visio
 
 Bürgler, M., Hohermuth, B., Vetsch, D. F., & Boes, R. M. 2022. Comparison of Signal Processing Algorithms for Multi-Sensor Intrusive Phase-Detection Probes. In *Proceedings 39th IAHR World Congress*, Granada, Spain, International Association for Hydro-Environment Engineering and Research, pp. 5094-5103. https://doi.org/10.3929/ethz-b-000566288
 
-Bürgler, M., Valero, D., Hohermuth, B., Boes, R.M., & Vetsch, D.F. 2024. Uncertainties in measurements of bubbly flows using phase-detection probes. *International Journal of Multiphase Flow*. (in Press). https://doi.org/10.1016/j.ijmultiphaseflow.2024.104978
+Bürgler, M., Valero, D., Hohermuth, B., Boes, R.M., & Vetsch, D.F. 2024. Uncertainties in measurements of bubbly flows using phase-detection probes. International Journal of Multiphase Flow 181, 104978. https://doi.org/10.1016/j.ijmultiphaseflow.2024.104978
 
 Kramer, M. 2019. Particle size distributions in turbulent air-water flows. In *E-Proceedings of the 38th IAHR World Congress*, pp. 5722-5731. https://doi.org/10.3850/38WC092019-0680
 
