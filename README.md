@@ -128,7 +128,7 @@ Bung, D. B., & Valero, D. 2017. FlowCV-An open-source toolbox for computer visio
 
 Bürgler, M., Hohermuth, B., Vetsch, D. F., & Boes, R. M. 2022. Comparison of Signal Processing Algorithms for Multi-Sensor Intrusive Phase-Detection Probes. In *Proceedings 39th IAHR World Congress*, Granada, Spain, International Association for Hydro-Environment Engineering and Research, pp. 5094-5103. https://doi.org/10.3929/ethz-b-000566288
 
-Bürgler, M., Valero, D., Hohermuth, B., Boes, R.M., & Vetsch, D.F. 2024. Uncertainties in measurements of bubbly flows using phase-detection probes. International Journal of Multiphase Flow 181, 104978. https://doi.org/10.1016/j.ijmultiphaseflow.2024.104978
+Bürgler, M., Valero, D., Hohermuth, B., Boes, R.M., & Vetsch, D.F. 2024. Uncertainties in measurements of bubbly flows using phase-detection probes. *International Journal of Multiphase Flow* 181, 104978. https://doi.org/10.1016/j.ijmultiphaseflow.2024.104978
 
 Kramer, M. 2019. Particle size distributions in turbulent air-water flows. In *E-Proceedings of the 38th IAHR World Congress*, pp. 5722-5731. https://doi.org/10.3850/38WC092019-0680
 
