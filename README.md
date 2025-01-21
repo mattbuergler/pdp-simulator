@@ -1,6 +1,6 @@
 # Phase-Detection Probe Simulator for Turbulent Bubbly Flows
 
-This is the repository of the Phase-Detection Probe Simulator for Turbulent Bubbly Flows (pdp-sim) Software.
+This is a Phase-Detection Probe Simulator for Turbulent Bubbly Flows (pdp-sim).
 
 This repository is structured as follows:
 
