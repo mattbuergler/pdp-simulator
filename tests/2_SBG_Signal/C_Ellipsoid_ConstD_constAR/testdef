@@ -1,0 +1,50 @@
+{
+  "SBG": "signal",
+  "RA": "",
+  "eval": "",
+  "files":
+  [
+    {
+      "file": "flow_data.h5",
+      "dataset" : "fluid/velocity",
+      "tag": "compare fluid velocity time series",
+      "rel": 1e-6,
+      "abs": 1e-6
+    },
+    {
+      "file": "flow_data.h5",
+      "dataset" : "bubbles/mean_velocity",
+      "tag": "compare bubble velocity time series",
+      "rel": 1e-6,
+      "abs": 1e-6
+    },
+    {
+      "file": "flow_data.h5",
+      "dataset" : "bubbles/arrival_times",
+      "tag": "compare the generated bubble arrival time",
+      "rel": 1e-6,
+      "abs": 1e-6
+    },
+    {
+      "file": "flow_data.h5",
+      "dataset" : "bubbles/size",
+      "tag": "compare the generated bubble size",
+      "rel": 1e-6,
+      "abs": 1e-6
+    },
+    {
+      "file": "binary_signal.h5",
+      "dataset" : "signal",
+      "tag": "compare signal time series",
+      "rel": 1e-6,
+      "abs": 1e-6
+    },
+    {
+      "file": "binary_signal.h5",
+      "dataset" : "time",
+      "tag": "compare time vector of the signal",
+      "rel": 1e-6,
+      "abs": 1e-6
+    }
+  ]
+}

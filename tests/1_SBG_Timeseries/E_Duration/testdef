@@ -1,0 +1,43 @@
+{
+  "SBG": "timeseries",
+  "RA": "",
+  "eval": "",
+  "files":
+  [
+    {
+      "file": "flow_data.h5",
+      "dataset" : "fluid/velocity",
+      "tag": "compare fluid velocity time series",
+      "rel": 1e-6,
+      "abs": 1e-6
+    },
+    {
+      "file": "flow_data.h5",
+      "dataset" : "fluid/trajectory",
+      "tag": "compare fluid trajectory time series",
+      "rel": 1e-6,
+      "abs": 1e-6
+    },
+    {
+      "file": "flow_data.h5",
+      "dataset" : "fluid/reynold_stresses",
+      "tag": "compare fluid Reynold stresses",
+      "rel": 1e-6,
+      "abs": 1e-6
+    },
+    {
+      "file": "flow_data.h5",
+      "dataset" : "fluid/mean_velocity",
+      "tag": "compare fluid mean velocity",
+      "rel": 1e-6,
+      "abs": 1e-6
+    },
+    {
+      "file": "flow_data.h5",
+      "dataset" : "fluid/turbulent_intensity",
+      "tag": "compare fluid turbulent intensity",
+      "rel": 1e-6,
+      "abs": 1e-6
+    }
+  ]
+}
