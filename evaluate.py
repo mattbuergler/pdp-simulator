@@ -45,7 +45,7 @@ except ImportError:
     print("Error while importing modules")
     raise
 
-def run_roc_filter(values: np.ndarray = None):
+def run_roc_filter_1d(values: np.ndarray = None):
     """
     Iteratively running the robust outlier cutoff filter based on the
     standard deviation and the universal threshold.
@@ -70,6 +70,69 @@ def run_roc_filter(values: np.ndarray = None):
     else:
         print('100% invalid data. Not performing ROC.\n')
     return val
+
+def run_roc_filter(values: np.ndarray = None):
+    """
+    Iteratively running the robust outlier cutoff filter based on the
+    standard deviation and the universal threshold.
+
+    Parameters
+    ----------
+    values : np.ndarray
+        The values to be filtered.
+
+    Returns
+    -------
+    np.ndarray
+        The ROC filtered values.
+
+    """
+    val = np.copy(values)
+    if len(val[~np.isnan(val)]) > 0:
+        N = len(val)
+        while sum(sum(np.isnan(val))) < sum(sum(np.isnan(roc_filter(val)))):
+            val = roc_filter(val)
+    else:
+        print('100% invalid data. Not performing ROC.\n')
+    return val
+
+
+def roc_filter(values: np.ndarray = None):
+    """
+    Robust outlier cutoff (ROC) filter based on the standard deviation and
+    the universal threshold.
+
+    Parameters
+    ----------
+    values : np.ndarray
+        The time series to be filtered.
+
+    Returns
+    -------
+    np.ndarray
+        The filtered time series.
+
+    """
+
+    ts_filtered = np.zeros(values.shape)
+    k = 1.483; # based on a normal distro, see Rousseeuw and Croux (1993)
+    # robust estimation of the variance:
+    # expected value estimated through MED
+    ts_med = np.nanmedian(values[:,0],axis=0)
+    # ust estimated through MED
+    ts_std = k * np.nanmedian(abs(values[:,0] - ts_med),axis=0)
+    # universal threshold:
+    # take only the number of non-nan values
+    N = len(values[~np.isnan(values[:,0])])
+    lambda_ts = math.sqrt(2*math.log(N))
+    k_std = lambda_ts*ts_std
+    for ii in range(0,len(values)):
+        if (abs((values[ii,0]-ts_med)*float(inverse_den(k_std))) > 1.0):
+            ts_filtered[ii,:] = np.nan
+        else:
+            ts_filtered[ii,:] = values[ii,:]
+
+    return ts_filtered
 
 def roc_filter_1d(values: np.ndarray = None):
     """
@@ -195,8 +258,9 @@ def get_input_parameters(config_file):
     if (config['RECONSTRUCTION']['type'] == 'dual_tip_AWCC'):
         n_p = config['RECONSTRUCTION']['n_particles']
     else:
-        print('ERROR: Currently only implemented for AWCC.')
-        sys.exit()
+        # print('ERROR: Currently only implemented for AWCC.')
+        # sys.exit()
+        n_p = config['RECONSTRUCTION']['n_particles']
     df = pd.DataFrame([[
                         mean_velocity[0],
                         mean_velocity[1],
@@ -241,6 +305,8 @@ def get_flow_data(flow_data_file,awcc_windows):
     u_mean_fluid = reader.getDataSet('fluid/mean_velocity')[:]
     # Read the turbulent intensity
     turbulent_intensity_fluid = reader.getDataSet('fluid/turbulent_intensity')[:]
+    # Read the Reynolds stresses
+    reynolds_stress_fluid = reader.getDataSet('fluid/reynold_stresses')[:]
     # Read the bubble velocity vector
     u_bubbles = reader.getDataSet('bubbles/mean_velocity')[:]
     try:
@@ -306,6 +372,11 @@ def get_flow_data(flow_data_file,awcc_windows):
     u_mean_bubbles = np.nanmean(u_bubbles,axis=0)
     u_rms_bubbles = np.nanstd(u_bubbles,axis=0)
     turbulent_intensity_bubbles = u_rms_bubbles/u_mean_bubbles[0]
+    velocity_fluctuations_bubbles = u_bubbles - u_mean_bubbles
+    reynolds_stress_bubbles = np.zeros((3, 3))
+    for ii in range(3):
+        for jj in range(3):
+            reynolds_stress_bubbles[ii, jj] = np.nanmean(velocity_fluctuations_bubbles[:, ii] * velocity_fluctuations_bubbles[:, jj])
 
     n_bubbles = sum(~np.isnan(u_bubbles[:,0]))
     # degrees of freedom
@@ -325,11 +396,19 @@ def get_flow_data(flow_data_file,awcc_windows):
                 critical_t*u_rms_bubbles[0]/math.sqrt(n_bubbles)
                     ])
 
-    u_pierced_bubbles = ((u_bubbles.T * pierced_index[:,0])* pierced_index[:,1]).T
-    n_pierced_bubbles = len(u_pierced_bubbles[~np.isnan(u_pierced_bubbles)])
+
+    not_pierced_index = np.any(np.isnan(pierced_index), axis=1)
+    u_pierced_bubbles = np.copy(u_bubbles)
+    u_pierced_bubbles[not_pierced_index, :] = np.nan
+    n_pierced_bubbles = sum(~np.isnan(u_pierced_bubbles[:,0]))
     u_mean_pierced_bubbles = np.nanmean(u_pierced_bubbles,axis=0)
     u_rms_pierced_bubbles = np.nanstd(u_pierced_bubbles,axis=0)
     turbulent_intensity_pierced_bubbles = u_rms_pierced_bubbles/u_mean_pierced_bubbles[0]
+    velocity_fluctuations_pierced_bubbles = u_pierced_bubbles - u_mean_pierced_bubbles
+    reynolds_stress_pierced_bubbles = np.zeros((3, 3))
+    for ii in range(3):
+        for jj in range(3):
+            reynolds_stress_pierced_bubbles[ii, jj] = np.nanmean(velocity_fluctuations_pierced_bubbles[:, ii] * velocity_fluctuations_pierced_bubbles[:, jj])
 
     n_pierced_bubbles = sum(~np.isnan(u_pierced_bubbles[:,0]))
     # degrees of freedom
@@ -348,7 +427,6 @@ def get_flow_data(flow_data_file,awcc_windows):
                 critical_t*u_rms_pierced_bubbles[0]/math.sqrt(n_pierced_bubbles),
                 critical_t*u_rms_pierced_bubbles[0]/math.sqrt(n_pierced_bubbles)
                     ])
-
     df = pd.DataFrame([[
                         n_fluid,
                         n_bubbles,
@@ -368,6 +446,9 @@ def get_flow_data(flow_data_file,awcc_windows):
                         turbulent_intensity_fluid[2],
                         ci_turb_int_fluid[0],
                         ci_turb_int_fluid[1],
+                        reynolds_stress_fluid[0,0],
+                        reynolds_stress_fluid[2,2],
+                        reynolds_stress_fluid[0,2],
                         u_mean_fluid_awcc[0],
                         u_mean_fluid_awcc[1],
                         u_mean_fluid_awcc[2],
@@ -398,6 +479,9 @@ def get_flow_data(flow_data_file,awcc_windows):
                         turbulent_intensity_bubbles[2],
                         ci_turb_int_bubbles[0],
                         ci_turb_int_bubbles[1],
+                        reynolds_stress_bubbles[0,0],
+                        reynolds_stress_bubbles[2,2],
+                        reynolds_stress_bubbles[0,2],
                         u_mean_pierced_bubbles[0],
                         u_mean_pierced_bubbles[1],
                         u_mean_pierced_bubbles[2],
@@ -412,7 +496,10 @@ def get_flow_data(flow_data_file,awcc_windows):
                         turbulent_intensity_pierced_bubbles[1],
                         turbulent_intensity_pierced_bubbles[2],
                         ci_turb_int_pierced_bubbles[0],
-                        ci_turb_int_pierced_bubbles[1]
+                        ci_turb_int_pierced_bubbles[1],
+                        reynolds_stress_pierced_bubbles[0,0],
+                        reynolds_stress_pierced_bubbles[2,2],
+                        reynolds_stress_pierced_bubbles[0,2]
                         ]],
                         columns=
                         [
@@ -423,6 +510,7 @@ def get_flow_data(flow_data_file,awcc_windows):
                         'u_rms_x_fluid_2.5%CI','u_rms_x_fluid_97.5%CI',
                         'T_ux_fluid','T_uy_fluid','T_uz_fluid',
                         'T_ux_fluid_2.5%CI','T_ux_fluid_97.5%CI',
+                        'RST_uu_fluid','RST_ww_fluid','RST_uw_fluid',
                         'u_x_fluid_awcc','u_y_fluid_awcc','u_z_fluid_awcc',
                         'u_x_fluid_awcc_2.5%CI','u_x_fluid_awcc_97.5%CI',
                         'u_rms_x_fluid_awcc','u_rms_y_fluid_awcc','u_rms_z_fluid_awcc',
@@ -435,12 +523,14 @@ def get_flow_data(flow_data_file,awcc_windows):
                         'u_rms_x_bubbles_2.5%CI','u_rms_x_bubbles_97.5%CI',
                         'T_ux_bubbles','T_uy_bubbles','T_uz_bubbles',
                         'T_ux_bubbles_2.5%CI','T_ux_bubbles_97.5%CI',
+                        'RST_uu_bubbles','RST_ww_bubbles','RST_uw_bubbles',
                         'u_x_pierced_bubbles','u_y_pierced_bubbles','u_z_pierced_bubbles',
                         'u_x_pierced_bubbles_2.5%CI','u_x_pierced_bubbles_97.5%CI',
                         'u_rms_x_pierced_bubbles','u_rms_y_pierced_bubbles','u_rms_z_pierced_bubbles',
                         'u_rms_x_pierced_bubbles_2.5%CI','u_rms_x_pierced_bubbles_97.5%CI',
                         'T_ux_pierced_bubbles','T_uy_pierced_bubbles','T_uz_pierced_bubbles',
-                        'T_ux_pierced_bubbles_2.5%CI','T_ux_pierced_bubbles_97.5%CI'
+                        'T_ux_pierced_bubbles_2.5%CI','T_ux_pierced_bubbles_97.5%CI',
+                        'RST_uu_pierced_bubbles','RST_ww_pierced_bubbles','RST_uw_pierced_bubbles'
                         ]
                         )
     return df
@@ -472,10 +562,12 @@ def get_awcc_data(awcc_file):
     c_awcc = reader.getDataSet('voidFraction')[:][0]
     reader.close()
     # remove values < 0
-    u_awcc[u_awcc < 0] = np.nan
+    idx = np.where(u_awcc[:,0] < 0)[0]
+    if len(idx) > 0:
+        u_awcc[idx,:] = np.nan
     u_awcc[np.isinf(u_awcc)] = np.nan
     # run ROC filtering
-    u_awcc[:,0] = run_roc_filter(u_awcc[:,0])
+    u_awcc = run_roc_filter(u_awcc)
     # Calculate weighted moments of reconstructed time series
     # weights = (t_awcc[:,1]-t_awcc[:,0])
     weights = np.ones(len(u_awcc))
@@ -483,6 +575,14 @@ def get_awcc_data(awcc_file):
     u_mean_awcc,u_rms_awcc = weighted_moments(u_awcc[:,0],weights)
     # calculate turbulent intensity
     turb_int_awcc = u_rms_awcc / u_mean_awcc
+    # calculate Reynolds stress tensor
+
+    velocity_fluctuations_awcc = u_awcc - np.nanmean(u_awcc, axis=0)
+    reynolds_stress_awcc = np.zeros((3, 3))
+    for ii in range(3):
+        for jj in range(3):
+            reynolds_stress_awcc[ii, jj] = np.nanmean(velocity_fluctuations_awcc[:, ii] * velocity_fluctuations_awcc[:, jj])
+
     # calculate confidence intervals
     n_vel_samples = sum(~np.isnan(u_awcc[:,0]))
     # degrees of freedom
@@ -502,6 +602,10 @@ def get_awcc_data(awcc_file):
                 critical_t*u_rms_awcc/math.sqrt(n_vel_samples)
                     ])
     d_32_awcc = 1.5*u_mean_awcc*c_awcc/F_awcc
+    if b_size_rec.ndim == 1:
+        d_b_awcc = np.nanmean(b_size_rec,axis=0)
+    elif b_size_rec.ndim == 2:
+        d_b_awcc = np.nanmean(b_size_rec,axis=0)[0]
     df = pd.DataFrame([[
                         n_vel_samples,
                         u_mean_awcc,
@@ -513,7 +617,10 @@ def get_awcc_data(awcc_file):
                         turb_int_awcc,
                         ci_turb_int_rec[0],
                         ci_turb_int_rec[1],
-                        c_awcc,F_awcc,d_32_awcc
+                        reynolds_stress_awcc[0,0],
+                        reynolds_stress_awcc[2,2],
+                        reynolds_stress_awcc[0,2],
+                        c_awcc,F_awcc,d_32_awcc,d_b_awcc
                         ]],
                         columns=
                         [
@@ -521,7 +628,8 @@ def get_awcc_data(awcc_file):
                         'u_x_awcc','u_x_awcc_2.5%CI','u_x_awcc_97.5%CI',
                         'u_rms_x_awcc','u_rms_x_awcc_2.5%CI','u_rms_x_awcc_97.5%CI',
                         'T_ux_awcc','T_ux_awcc_2.5%CI','T_ux_awcc_97.5%CI',
-                        'c_awcc','F_awcc','d_32_awcc'
+                        'RST_uu_awcc','RST_ww_awcc','RST_uw_awcc',
+                        'c_awcc','F_awcc','d_32_awcc','d_b_awcc'
                         ]
                         )
     return df,t_awcc.mean(axis=1),u_awcc[:,0],t_awcc
@@ -569,7 +677,6 @@ def process_simulation(path,simulation_id,simulation_results_file,overwrite):
         df_sbg = get_flow_data(flow_data_file,awcc_windows)
         # get awcc raw data
         u_awcc_raw,SPR,R12max = get_awcc_raw_data(path)
-
         u_real = np.array([df_input['u_x_real'][0],df_input['u_y_real'][0],df_input['u_z_real'][0]])
         u_x_real = df_input['u_x_real'][0]
         T_ux_real = df_input['T_ux_real'][0]
