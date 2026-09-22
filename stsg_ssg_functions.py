@@ -20,7 +20,6 @@
 # https://https://opensource.org/license/gpl-3-0
 
 import numpy as np
-import pandas as pd
 import bisect
 import random
 import time
@@ -28,8 +27,8 @@ import math
 from joblib import Parallel, delayed
 from pathlib import Path
 import shutil
-import scipy
-from matplotlib import pyplot as plt
+from scipy.signal import lfilter
+from scipy.stats import lognorm
 
 try:
     from dataio.H5Writer import H5Writer
@@ -100,6 +99,28 @@ def SBG_dt_corr(Uprev, Um, sigma, Ti, dt, R):
     # velocity = mean + fluctuation
     U = Um + unew;
     return U
+
+
+def generate_velocity_chunk(previous_velocity, mean_velocity, sigma, time_scale, dt, random_values):
+    """Generate one autoregressive velocity chunk in compiled SciPy loops."""
+    previous_velocity = np.asarray(previous_velocity)
+    mean_velocity = np.asarray(mean_velocity)
+    sigma = np.asarray(sigma)
+    time_scale = np.asarray(time_scale)
+    random_values = np.asarray(random_values)
+
+    decay = 1.0 - dt / time_scale
+    excitation = sigma * np.sqrt(2.0 * dt / time_scale)
+    velocity = np.empty_like(random_values, dtype=float)
+    for component in range(random_values.shape[1]):
+        fluctuation, _ = lfilter(
+            [excitation[component]],
+            [1.0, -decay[component]],
+            random_values[:, component],
+            zi=[decay[component] * (previous_velocity[component] - mean_velocity[component])],
+        )
+        velocity[:, component] = mean_velocity[component] + fluctuation
+    return velocity
 
 def create_bubbles(flow_properties, F):
     """Produces a vector with bubble sizes
@@ -273,7 +294,7 @@ def get_max_bubble_sve_size(flow_properties):
         d_max = bubbles['diameter']
     elif bubbles['size_distribution'] == 'lognormal':
         # Get 99.5-percentile from log-normal distribution
-        d_max = scipy.stats.lognorm.ppf(0.995, s=bubbles['sd_ln_diameter'],scale=math.exp(bubbles['mean_ln_diameter']))
+        d_max = lognorm.ppf(0.995, s=bubbles['sd_ln_diameter'],scale=math.exp(bubbles['mean_ln_diameter']))
     return d_max
 
 def get_perc_bubble_sve_size(flow_properties, percentile):
@@ -296,7 +317,7 @@ def get_perc_bubble_sve_size(flow_properties, percentile):
         d_percentile = bubbles['diameter']
     elif bubbles['size_distribution'] == 'lognormal':
         # Get 99.5-percentile from log-normal distribution
-        d_percentile = scipy.stats.lognorm.ppf(percentile, s=bubbles['sd_ln_diameter'],scale=math.exp(bubbles['mean_ln_diameter']))
+        d_percentile = lognorm.ppf(percentile, s=bubbles['sd_ln_diameter'],scale=math.exp(bubbles['mean_ln_diameter']))
     return d_percentile
 
 def SBG_fluid_velocity(path, flow_properties, reproducibility, progress):
@@ -379,19 +400,12 @@ def SBG_fluid_velocity(path, flow_properties, reproducibility, progress):
         n_chunk = min(n_chunk_max, n-kk)
         # Create multivariate normal random variables for chunk
         R = np.random.multivariate_normal(mean, cov, n_chunk)
-        # Initialize the velocity and trajectory arrays
-        u_f = np.empty((n_chunk,3)) * np.nan
-        x_f = np.empty((n_chunk,3)) * np.nan
-        # First velocity vector depends on old chunk
-        u_f[0,:] = SBG_dt_corr(u_f_old[0,:], um, sigma, T, dt, R[0,:])
-        # First trajectory vector depends on old chunk
-        x_f[0,:] = x_f_old[0,:] + u_f_old[0,:]*dt
-        # Calculate rest of the chunk
-        for ii in range(1,n_chunk):
-            # Calculate velocity
-            u_f[ii,:] = SBG_dt_corr(u_f[ii-1,:], um, sigma, T, dt, R[ii,:])
-            # Calculate trajectory
-            x_f[ii,:] = x_f[ii-1,:] + u_f[ii-1,:]*dt
+        # Generate the autoregressive velocity in compiled loops.
+        u_f = generate_velocity_chunk(u_f_old[0,:], um, sigma, T, dt, R)
+        # Integrate the trajectory in one vectorized cumulative sum. The
+        # previous chunk's last velocity advances the first sample.
+        velocity_for_step = np.vstack((u_f_old[0,:], u_f[:-1,:]))
+        x_f = x_f_old[0,:] + np.cumsum(velocity_for_step, axis=0) * dt
         # Write chunk to .h5 file
         writer.write2DataSet('fluid/velocity', u_f, row=kk, col=0)
         writer.write2DataSet('fluid/trajectory', x_f, row=kk, col=0)
@@ -414,15 +428,10 @@ def SBG_fluid_velocity(path, flow_properties, reproducibility, progress):
 
     # Calculate the mean velocity
     u_f_m = u_f.mean(axis=0)
-    # Initialize the Reynolds stress tensor
-    reynolds_stress = np.empty((len(u_f),3,3))
-    for ii in range(0,len(u_f)):
-        # Calculate the velocity fluctuation
-        u_f_prime = u_f[ii,:]-u_f_m
-        # Reynolds stresses as outer product of fluctuations
-        reynolds_stress[ii,:,:] = np.outer(u_f_prime, u_f_prime)
-    # Average the Reynolds stress tensor
-    mean_reynolds_stress = reynolds_stress.mean(axis=0)
+    # Calculate the Reynolds stress directly, without materializing an
+    # (n, 3, 3) tensor or looping over every realization in Python.
+    u_f_prime = u_f - u_f_m
+    mean_reynolds_stress = u_f_prime.T @ u_f_prime / len(u_f_prime)
     # Calculate turbulent intensity with regard to mean x-velocity
     turbulent_intensity = np.sqrt(np.array([
             mean_reynolds_stress[0,0], \

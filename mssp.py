@@ -44,7 +44,6 @@ import sys
 import argparse
 import pathlib
 import json
-import jsonschema
 import math
 import numpy as np
 from numpy import linalg
@@ -59,6 +58,8 @@ from scipy import signal
 from decimal import *
 from itertools import combinations
 from joblib import Parallel, delayed
+
+from configuration import load_config
 
 try:
     from dataio.H5Writer import H5Writer
@@ -1249,12 +1250,7 @@ def main():
     path = pathlib.Path(args.path)
     config_file = path / 'config.json'
     # Read the configuation JSON-file
-    config = json.loads(config_file.read_bytes())
-    # Load the schema
-    schema_file = pathlib.Path(sys.argv[0]).parents[0] / 'schemadef' / 'config_schema.json'
-    schema = json.loads(schema_file.read_bytes())
-    # Validate the configuration file
-    jsonschema.validate(instance=config, schema=schema)
+    config = load_config(config_file)
     if args.compressed_signal == 'True':
         t_signal,signal,sensor_ids = read_compressed_signal(path)
     else:

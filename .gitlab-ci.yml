@@ -1,45 +1,62 @@
 stages:
+  - quality
   - test
 
-variables:
-  GIT_SUBMODULE_STRATEGY: normal
-  DEBIAN_FRONTEND: noninteractive
+default:
+  image: python:${PYTHON_VERSION}-slim
+  variables:
+    PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    UV_CACHE_DIR: "$CI_PROJECT_DIR/.uv-cache"
+  cache:
+    key: "uv-${PYTHON_VERSION}-${CI_COMMIT_REF_SLUG}"
+    paths:
+      - .uv-cache/
+  before_script:
+    - python -m pip install uv==0.12.17
+    - uv sync --locked --all-groups
 
-.run-sequential-tests-template: &run-sequential-tests-template
+quality:
+  stage: quality
+  variables:
+    PYTHON_VERSION: "3.11"
   script:
-    - pipenv run python tests/runtests.py -n 1 -Cr tests/[0-9]*
+    - uv run ruff check .
+    - uv run ruff format --check .
+    - uv run mypy
+    - uv build
 
-.run-parallel-tests-template: &run-parallel-tests-template
-  script:
-    - pipenv run python tests/runtests.py -n 2 -Cr tests/[0-9]*
-
-test-sequential:
-  image: python:3.11.4
+tests:
   stage: test
+  parallel:
+    matrix:
+      - PYTHON_VERSION: ["3.11", "3.12", "3.13"]
+  script:
+    - uv run pytest
+
+scientific-regression-sequential:
+  stage: test
+  variables:
+    PYTHON_VERSION: "3.11"
   tags:
     - sequential
-  before_script:
-    - apt-get update
-    - /usr/local/bin/python -m pip install --upgrade pip
-    - pip install pipenv
-    - PIPENV_VENV_IN_PROJECT=1
-    - pipenv --python $(which python)
-    - pipenv install --ignore-pipfile
-  dependencies:
-  <<: *run-sequential-tests-template
+  script:
+    - uv run python tests/runtests.py -n 1 -C -r tests/[0-9]*
+  artifacts:
+    when: always
+    paths:
+      - tests/**/run/run.output
+    expire_in: 1 week
 
-
-test-parallel:
-  image: python:3.11.4
+scientific-regression-parallel:
   stage: test
+  variables:
+    PYTHON_VERSION: "3.11"
   tags:
     - parallel
-  before_script:
-    - apt-get update
-    - /usr/local/bin/python -m pip install --upgrade pip
-    - pip install pipenv
-    - PIPENV_VENV_IN_PROJECT=1
-    - pipenv --python $(which python)
-    - pipenv install --ignore-pipfile
-  dependencies:
-  <<: *run-parallel-tests-template
+  script:
+    - uv run python tests/runtests.py -n 2 -C -r tests/[0-9]*
+  artifacts:
+    when: always
+    paths:
+      - tests/**/run/run.output
+    expire_in: 1 week

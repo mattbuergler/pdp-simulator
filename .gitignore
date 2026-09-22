@@ -1,25 +1,31 @@
-**/.DS_store
-**/.Rhistory
-**/*.h5
-**/*.pyc
-*.pdf
-.*.*
+# Python and tooling
+__pycache__/
+*.py[cod]
+*.egg-info/
+.coverage
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.uv-cache/
+.venv/
+build/
+dist/
+coverage.xml
+htmlcov/
 
-*.sublime-workspace
+# Editors and operating systems
+.DS_Store
+.Rhistory
+.idea/
+.vscode/
 *.sublime-project
+*.sublime-workspace
 
-tests/*.h5
+# Generated simulation and test outputs
 tests/**/run/*
 tests/**/PASSED
 test/dummy*
-!test/*/*/input/config.json
-!tests/2_SBG_Signal/A_Sphere_Const3mm/input/flow_data.h5
-!tests/2_SBG_Signal/B_Sphere_LogN3mm/input/flow_data.h5
-!tests/2_SBG_Signal/C_Ellipsoid_Const3mm_constAR/input/flow_data.h5
-!tests/2_SBG_Signal/D_Ellipsoid_Const3mm_Aoyama/input/flow_data.h5
-!tests/2_SBG_Signal/E_Ellipsoid_LogN3mm_constAR/input/flow_data.h5
-!tests/2_SBG_Signal/F_Ellipsoid_LogN3mm_Aoyama/input/flow_data.h5
-!tests/2_SBG_Signal/G_Ellipsoid_LogN3mm_Vakhrushev/input/flow_data.h5
-!tests/2_SBG_Signal/H_VoidFraction/input/flow_data.h5
-!tests/3_RA/A_Triangular/input/binary_signal.h5
-optimization
+optimization/
+
+# Local scientific outputs; tracked reference fixtures remain tracked
+*.pdf

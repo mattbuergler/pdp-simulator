@@ -20,6 +20,7 @@ import sys
 import pathlib
 import subprocess
 import shutil
+from importlib.metadata import PackageNotFoundError, version
 from typing import List
 import numpy as np
 import math
@@ -145,7 +146,17 @@ def get_git_revision_short_hash() -> str:
     return subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode('ascii').strip()
 
 def get_git_version() -> str:
-    return subprocess.check_output(['git', 'describe', '--always','--long']).decode('ascii').strip()
+    repository = pathlib.Path(__file__).resolve().parents[1]
+    try:
+        return subprocess.check_output(
+            ['git', '-C', str(repository), 'describe', '--always', '--long'],
+            stderr=subprocess.DEVNULL,
+        ).decode('ascii').strip()
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        try:
+            return version('pdp-sim')
+        except PackageNotFoundError:
+            return 'unknown'
 
 def printHeader():
     print(f'MULTIPHADE {get_git_version()}\n')
@@ -159,13 +170,21 @@ def compress_signal(signal):
     return compressed
 
 def decompress_signal(compressed, length):
-    signal = np.zeros(length, dtype=int)
-    signal[compressed[1:]] = 1 - signal[compressed[1:]]  # Toggle values at change points
-    signal = np.cumsum(signal) % 2  # Cumulative sum and modulo to alternate between 0 and 1
-    return signal
+    compressed = np.asarray(compressed, dtype=int)
+    if length <= 0:
+        raise ValueError('length must be positive')
+    if compressed.size == 0 or compressed[0] not in (0, 1):
+        raise ValueError('compressed signal must start with a binary value')
+
+    change_indices = compressed[1:]
+    if np.any((change_indices <= 0) | (change_indices >= length)):
+        raise ValueError('change indices must be within the signal bounds')
+
+    transitions = np.zeros(length, dtype=int)
+    transitions[0] = compressed[0]
+    transitions[change_indices] = 1
+    return np.cumsum(transitions) % 2
 
 def get_signal_frequency(t_signal):
     f_s = 1.0/((t_signal[-1]-t_signal[0])/(len(t_signal)-1))
     return f_s
-
-

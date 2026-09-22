@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, portfolio-modernization]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Quality and package build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: "0.12.17"
+          python-version: "3.11"
+          enable-cache: true
+      - name: Install the locked environment
+        run: uv sync --locked --all-groups
+      - name: Lint
+        run: uv run ruff check .
+      - name: Check formatting
+        run: uv run ruff format --check .
+      - name: Type check
+        run: uv run mypy
+      - name: Build distributions
+        run: uv build
+
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: "0.12.17"
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+      - name: Install the locked environment
+        run: uv sync --locked --all-groups
+      - name: Run unit tests
+        run: uv run pytest
+      - name: Run representative scientific regression
+        if: matrix.python-version == '3.11'
+        run: uv run python tests/runtests.py -r tests/1_SBG_Timeseries/A_Velocity

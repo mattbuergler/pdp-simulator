@@ -18,12 +18,9 @@
 import sys
 import argparse
 import pathlib
-import json
-import jsonschema
-import numpy as np
-import pandas as pd
 import time
-import matplotlib as plt
+
+from configuration import load_config
 
 try:
     import stsg_ssg_functions
@@ -91,12 +88,7 @@ def main():
     path = pathlib.Path(args.path)
     input_file = path / 'config.json'
     # Read the configuation JSON-file
-    config = json.loads(input_file.read_bytes())
-    # Load the schema
-    schema_file = pathlib.Path(sys.argv[0]).parents[0] / 'schemadef' / 'config_schema.json'
-    schema = json.loads(schema_file.read_bytes())
-    # Validate the configuration file
-    jsonschema.validate(instance=config, schema=schema)
+    config = load_config(input_file)
 
     command = args.run
     if command in ["timeseries", 'all']:

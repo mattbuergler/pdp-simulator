@@ -1,0 +1,36 @@
+cff-version: 1.2.0
+message: "If you use PDP-SIM, please cite the software and the associated publication."
+title: "Phase-detection probe simulator for turbulent bubbly flows"
+type: software
+version: 1.1.0
+license: GPL-3.0-only
+repository-code: "https://gitlab.ethz.ch/vaw/public/pdp-sim"
+authors:
+  - family-names: "Bürgler"
+    given-names: "Matthias"
+  - family-names: "Valero"
+    given-names: "Daniel"
+  - family-names: "Hohermuth"
+    given-names: "Benjamin"
+  - family-names: "Vetsch"
+    given-names: "David F."
+  - family-names: "Boes"
+    given-names: "Robert M."
+preferred-citation:
+  type: article
+  title: "Uncertainties in measurements of bubbly flows using phase-detection probes"
+  authors:
+    - family-names: "Bürgler"
+      given-names: "Matthias"
+    - family-names: "Valero"
+      given-names: "Daniel"
+    - family-names: "Hohermuth"
+      given-names: "Benjamin"
+    - family-names: "Boes"
+      given-names: "Robert M."
+    - family-names: "Vetsch"
+      given-names: "David F."
+  journal: "International Journal of Multiphase Flow"
+  volume: 181
+  year: 2024
+  doi: "10.1016/j.ijmultiphaseflow.2024.104978"

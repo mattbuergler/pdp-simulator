@@ -246,7 +246,7 @@ class TestRunner:
             PRINTERRORANDEXIT("runfile <" + str(runfile) + "> does not exists")
         # create simulation call
         cmd = [
-            "python",
+            sys.executable,
             str(pathlib.Path(self.bin) / "stsg_ssg.py")
         ]
         cmd.append("-r")
@@ -269,7 +269,7 @@ class TestRunner:
         # create simulation call
         # get a velocity estimate
         cmd = [
-            "python",
+            sys.executable,
             str(pathlib.Path(self.bin) / "mssp.py"),
             "-roc",
             str(self.roc),
@@ -292,7 +292,7 @@ class TestRunner:
             PRINTERRORANDEXIT("runfile <" + str(runfile) + "> does not exists")
         # create simulation call
         cmd = [
-            "python",
+            sys.executable,
             str(pathlib.Path(self.bin) / "velcoity_tsa.py"),
             "."
         ]
