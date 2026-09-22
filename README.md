@@ -45,9 +45,10 @@ uv sync --locked --all-groups
 
 ## Usage
 
-Each simulation directory contains a `config.json` describing the flow, bubble population, probe, and
-reconstruction settings. The complete JSON Schema is bundled under `schemadef/`; working examples are
-available throughout `tests/`.
+Simulation generation needs a `config.json` describing the flow, bubble population, probe, and
+reconstruction settings. For processing a measured signal, only `PROBE` (sampling frequency and sensor
+locations) and `RECONSTRUCTION` are needed. The full JSON Schema is bundled under `schemadef/`;
+working examples are available throughout `tests/`.
 
 Generate a stochastic velocity time series:
 
@@ -66,6 +67,11 @@ Process the signal:
 ```bash
 uv run pdp-sim process path/to/simulation
 ```
+
+For a real dual-tip recording, place `binary_signal.h5` and a minimal `config.json` in the measurement
+directory. The HDF5 file needs `time` and `signal` datasets and a `sensor_id` attribute on `signal`.
+The processor does not read `flow_data.h5` or simulation inputs. See the
+[measurement guide](doc/measurements.md) for an example configuration.
 
 The dedicated commands `pdp-sim-generate`, `pdp-sim-process`, and `pdp-sim-evaluate` are also
 installed. The original script interfaces remain available for compatibility.

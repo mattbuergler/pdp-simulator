@@ -20,8 +20,8 @@ def schema_path() -> Path:
     return Path(str(files("schemadef").joinpath("config_schema.json")))
 
 
-def load_config(path: str | Path) -> dict[str, Any]:
-    """Read and validate a scenario JSON file against the bundled schema."""
+def _read_config(path: str | Path) -> dict[str, Any]:
+    """Read a JSON configuration and report errors with its file location."""
     config_path = Path(path)
     try:
         loaded = json.loads(config_path.read_text(encoding="utf-8"))
@@ -35,11 +35,35 @@ def load_config(path: str | Path) -> dict[str, Any]:
     if not isinstance(loaded, dict):
         raise ConfigurationError("Invalid configuration at <root>: expected an object")
     config: dict[str, Any] = loaded
+    return config
 
-    schema = json.loads(schema_path().read_text(encoding="utf-8"))
+
+def _validate_config(config: dict[str, Any], schema: dict[str, Any]) -> dict[str, Any]:
+    """Validate a configuration and return the fields available to its caller."""
     errors = sorted(Draft7Validator(schema).iter_errors(config), key=lambda item: list(item.path))
     if errors:
         validation_error: ValidationError = errors[0]
         location = ".".join(str(part) for part in validation_error.absolute_path) or "<root>"
         raise ConfigurationError(f"Invalid configuration at {location}: {validation_error.message}")
     return config
+
+
+def load_config(path: str | Path) -> dict[str, Any]:
+    """Load the complete configuration required to generate a simulation."""
+    schema = json.loads(schema_path().read_text(encoding="utf-8"))
+    return _validate_config(_read_config(path), schema)
+
+
+def load_processing_config(path: str | Path) -> dict[str, Any]:
+    """Load only probe geometry and reconstruction settings for measured signals."""
+    schema = json.loads(schema_path().read_text(encoding="utf-8"))
+    fields = ("PROBE", "RECONSTRUCTION")
+    processing_schema = {
+        "$schema": schema["$schema"],
+        "type": "object",
+        "required": list(fields),
+        "properties": {field: schema["properties"][field] for field in fields},
+    }
+    source = _read_config(path)
+    processing_config = {field: source[field] for field in fields if field in source}
+    return _validate_config(processing_config, processing_schema)

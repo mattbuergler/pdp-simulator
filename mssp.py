@@ -59,7 +59,7 @@ from decimal import *
 from itertools import combinations
 from joblib import Parallel, delayed
 
-from configuration import load_config
+from configuration import load_processing_config
 
 try:
     from dataio.H5Writer import H5Writer
@@ -1250,7 +1250,7 @@ def main():
     path = pathlib.Path(args.path)
     config_file = path / 'config.json'
     # Read the configuation JSON-file
-    config = load_config(config_file)
+    config = load_processing_config(config_file)
     if args.compressed_signal == 'True':
         t_signal,signal,sensor_ids = read_compressed_signal(path)
     else:

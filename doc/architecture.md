@@ -38,6 +38,10 @@ The command package is deliberately a thin façade around the published numerica
 This keeps installation and automation conventional without obscuring the research kernels or
 silently changing established results.
 
+The processor has a separate input boundary: it loads only `PROBE` and `RECONSTRUCTION` from the
+configuration and reads `binary_signal.h5`. It does not receive the generator's flow or bubble data.
+See [the measurement guide](measurements.md) for the real-recording format.
+
 ## Reproducibility boundary
 
 `pyproject.toml` declares supported dependency ranges; `uv.lock` captures the exact cross-platform

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from configuration import ConfigurationError, load_config, schema_path
+from configuration import ConfigurationError, load_config, load_processing_config, schema_path
 
 
 def test_bundled_schema_exists() -> None:
@@ -44,3 +44,26 @@ def test_reports_schema_location(tmp_path: Path) -> None:
     config.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(ConfigurationError, match="FLOW_PROPERTIES"):
         load_config(config)
+
+
+def test_processing_config_excludes_simulation_inputs(tmp_path: Path) -> None:
+    source = Path("tests/3_RA/C_2tip_AWCC/input/config.json")
+    payload = json.loads(source.read_text(encoding="utf-8"))
+    payload["FLOW_PROPERTIES"] = "unavailable from a real measurement"
+    del payload["REPRODUCIBILITY"]
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    config = load_processing_config(path)
+
+    assert set(config) == {"PROBE", "RECONSTRUCTION"}
+    assert config["RECONSTRUCTION"]["type"] == "dual_tip_AWCC"
+
+
+def test_processing_config_requires_probe_geometry(tmp_path: Path) -> None:
+    path = tmp_path / "config.json"
+    path.write_text(
+        '{"RECONSTRUCTION": {"type": "dual_tip_AWCC", "n_particles": 8}}', encoding="utf-8"
+    )
+    with pytest.raises(ConfigurationError, match="PROBE"):
+        load_processing_config(path)
