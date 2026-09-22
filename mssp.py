@@ -411,10 +411,10 @@ def run_sig_proc_awcc(path, args, config, sensor_ids, duration, signal):
     bubbles = []
     for ii in range(0,len(results['u_inst'])):
         ifd_times = pd.DataFrame(index=sensor_ids, columns=['t_2h','t_2h+1'])
-        ifd_times['t_2h'][0] = start[ii]/f_sample
-        ifd_times['t_2h+1'][0] = stop[ii]/f_sample
-        ifd_times['t_2h'][1] = start[ii]/f_sample
-        ifd_times['t_2h+1'][1] = stop[ii]/f_sample
+        ifd_times.loc[0, 't_2h'] = start[ii]/f_sample
+        ifd_times.loc[0, 't_2h+1'] = stop[ii]/f_sample
+        ifd_times.loc[1, 't_2h'] = start[ii]/f_sample
+        ifd_times.loc[1, 't_2h+1'] = stop[ii]/f_sample
         bubble_props = {'ifd_times':ifd_times}
         u = np.array([0.0,0.0, 0.0])
         if math.isnan(results['u_inst'][ii]):
@@ -484,7 +484,7 @@ def run_interface_pairing_shen(idx_rise_0, id0, max_t_k, signal, signal_ifd, sen
     ifd_times = pd.DataFrame(index=sensor_ids, columns=['t_2h','t_2h+1'])
     # Main Sensor 0
     # Write t_2h of sensor 0
-    ifd_times['t_2h'][0] = t_signal_ifd_list[idx_rise_0]
+    ifd_times.loc[0, "t_2h"] = t_signal_ifd_list[idx_rise_0]
     # Search for t_2h+1
     # Indices of the falling IFD signals for main sensor 0
     signal_ifd_fall_0 = np.where(signal_ifd[:,id0] < 0.0)[0]
@@ -492,9 +492,11 @@ def run_interface_pairing_shen(idx_rise_0, id0, max_t_k, signal, signal_ifd, sen
     if len(signal_ifd_fall_0[signal_ifd_fall_0 > idx_rise_0]) > 0:
         idx_fall_0 = min(signal_ifd_fall_0[signal_ifd_fall_0 > idx_rise_0])
         # Write t_b+1 of sensor 0
-        ifd_times['t_2h+1'][0] = t_signal_ifd_list[idx_fall_0]
+        ifd_times.loc[0, "t_2h+1"] = t_signal_ifd_list[idx_fall_0]
+
     else:
-        ifd_times['t_2h+1'][0] = np.nan
+        ifd_times.loc[0, "t_2h+1"] = np.nan
+
 
     # Auxillary sensors k
     for k in aux_sensor_ids:
@@ -573,14 +575,14 @@ def run_interface_pairing_shen(idx_rise_0, id0, max_t_k, signal, signal_ifd, sen
         # interface for each sensor
         # Write t_2h of sensor k
         if not np.isnan(idx_rise_k):
-            ifd_times['t_2h'][k] = t_signal_ifd_list[idx_rise_k]
+            ifd_times.loc[k, "t_2h"] = t_signal_ifd_list[idx_rise_k]
         else:
-            ifd_times['t_2h'][k] = np.nan
+            ifd_times.loc[k, "t_2h"] = np.nan
         # Write t_2h+1 of sensor k
         if not np.isnan(idx_fall_k):
-            ifd_times['t_2h+1'][k] = t_signal_ifd_list[idx_fall_k]
+            ifd_times.loc[k, "t_2h+1"] = t_signal_ifd_list[idx_fall_k]
         else:
-            ifd_times['t_2h+1'][k] = np.nan
+            ifd_times.loc[k, "t_2h+1"] = np.nan
     # Check for each sensor if IFD times of front (2h) and rear (2h+1)
     # interface fall within the range for the lag between signal of sensors 0
     # and signal of sensor k from Eq. (42) in Shen et al. (2005)
@@ -591,18 +593,19 @@ def run_interface_pairing_shen(idx_rise_0, id0, max_t_k, signal, signal_ifd, sen
         lag_2h = abs(Decimal(ifd_times['t_2h'][0]) - Decimal(ifd_times['t_2h'][k]))
         if lag_2h.compare(max_t_k[k]) == 1:
             # lag too large
-            ifd_times['t_2h'][k] = np.nan
+            ifd_times.loc[k, "t_2h"] = np.nan
+
             ok = False
         # second interface (2h+1)
         lag_2hp1 = abs(Decimal(ifd_times['t_2h+1'][0]) - Decimal(ifd_times['t_2h+1'][k]))
         if lag_2hp1.compare(max_t_k[k]) == 1:
             # lag too large
-            ifd_times['t_2h+1'][k] = np.nan
+            ifd_times.loc[k, "t_2h+1"] = np.nan
             ok = False
         if math.isnan(lag_2h) | math.isnan(lag_2h):
             ok = False
-            ifd_times['t_2h'][k] = np.nan
-            ifd_times['t_2h+1'][k] = np.nan
+            ifd_times.loc[k, "t_2h"] = np.nan
+            ifd_times.loc[k, "t_2h+1"] = np.nan
         # store IDs of sensors which recorded a valid signal
         if ok:
             aux_sensors_complete.append(k)
@@ -742,8 +745,8 @@ def run_event_detection_kramer(args, aux_sensor_ids, sensor_ids, t_signal, signa
         disparity = pd.DataFrame(index=aux_sensor_ids, columns=['disparity'])
         # Write t_2h of sensor 0
         # set interface detection times for the leading sensor 0
-        ifd_times['t_2h'][0] = t0[0]
-        ifd_times['t_2h+1'][0] = t0[1]
+        ifd_times.loc[0, "t_2h"] = t0[0]
+        ifd_times.loc[0, "t_2h+1"] = t0[1]
         aux_sensors_complete = []
         for k in aux_sensor_ids:
             idk = np.where(sensor_ids == k)[0][0]
@@ -755,15 +758,15 @@ def run_event_detection_kramer(args, aux_sensor_ids, sensor_ids, t_signal, signa
                 disparity_k = abs((t0[3] - t_rise_fall_central_chord[idk][idx_travel_k,3])/t0[3])[0][0]
                 disparity['disparity'][k] = disparity_k
                 if (disparity_k < d_max) & (t_travel_k < t_travel_k_ip1[ii]):
-                    ifd_times['t_2h'][k] = t_rise_fall_central_chord[idk][idx_travel_k,0][0][0]
-                    ifd_times['t_2h+1'][k] = t_rise_fall_central_chord[idk][idx_travel_k,1][0][0]
+                    ifd_times.loc[k, "t_2h"] = t_rise_fall_central_chord[idk][idx_travel_k,0][0][0]
+                    ifd_times.loc[k, "t_2h+1"] = t_rise_fall_central_chord[idk][idx_travel_k,1][0][0]
                     aux_sensors_complete.append(k)
                 else:
-                    ifd_times['t_2h'][k] = np.nan
-                    ifd_times['t_2h+1'][k] = np.nan
+                    ifd_times.loc[k, "t_2h"] = np.nan
+                    ifd_times.loc[k, "t_2h+1"] = np.nan
             else:
-                ifd_times['t_2h'][k] = np.nan
-                ifd_times['t_2h+1'][k] = np.nan
+                ifd_times.loc[k, "t_2h"] = np.nan
+                ifd_times.loc[k, "t_2h+1"] = np.nan
         # store sensors with valid signal as bubble property
         bubble_props = {'aux_sensors_complete':aux_sensors_complete}
         # Store the interface detection times for complete and
@@ -1333,6 +1336,7 @@ def main():
                 bubbles_complete.append(bubble_props)
             # interfacial area concentration cannot be estimated with AWCC
             IAC = math.nan
+            F1 = len(bubbles)/duration
         else:
             PRINTERRORANDEXIT(f'Proccesing algorithm <{ra_type}> not valid for 2-tip probes.')
 
@@ -1391,6 +1395,7 @@ def main():
                 IAC = IAC + bubble[1]
 
         IAC = IAC * 2 / (Decimal(t_signal[-1])-Decimal(t_signal[0]))
+        F1 = len(bubbles)/duration
         # end (n_sensors >= 4)
         print(f"\nDetected {len(bubbles)} bubble signals.")
         print(f"\nDetected {len(bubbles_complete)} complete bubble signals.")
@@ -1510,7 +1515,7 @@ def main():
         writer.writeDataSet('bubbles/chord_lengths_inst_vel', chord_lengths_inst_u, 'float64')
         writer.writeDataSet('bubbles/chord_lengths_mean_vel', chord_lengths_mean_u, 'float64')
         writer.writeDataSet('bubbles/chord_times', chord_times, 'float64')
-        writer.writeDataSet('bubbles/bubble_frequency', np.array([F1],dtype='float64'), 'float64')
+    writer.writeDataSet('bubbles/bubble_frequency', np.array([F1],dtype='float64'), 'float64')
     # Create the IAC and void_fraction datasets
     writer.writeDataSet('IAC', np.array([IAC],dtype='float64'), 'float64')
     writer.writeDataSet('voidFraction', np.array([np.mean(signal[:,0])]), 'float64')
