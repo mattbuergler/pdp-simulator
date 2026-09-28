@@ -65,6 +65,8 @@ try:
     from dataio.H5Writer import H5Writer
     from dataio.H5Reader import H5Reader
     from tools.globals import *
+    from tools.signal_transitions import TransitionSignal
+    from tools.sparse_correlation import run_correlation
 except ImportError:
     print("Error while importing modules")
     raise
@@ -110,6 +112,18 @@ def read_compressed_signal(path):
     t_signal = np.linspace(0,(length-1)/f_s,length)
     return t_signal,signal,sensor_ids
 
+
+def read_transition_signal(path):
+    """Read the existing compressed format without expanding all samples."""
+    reader = H5Reader(path / 'compressed_signal.h5')
+    length = int(reader.getDataSet('length')[0])
+    f_sample = float(reader.getDataSet('f_s')[0])
+    sensor_ids = reader.getDataSet('sensor_ids')[:]
+    transitions = [reader.getDataSet(f'signal{int(sensor_id)}')[:]
+                   for sensor_id in sensor_ids]
+    reader.close()
+    return TransitionSignal(transitions, length), f_sample, sensor_ids
+
 def inverse_den(x):
     """
     Calculate inverse of a number.
@@ -151,28 +165,21 @@ def chord(signal, duration):
     """
 
 
-    chord_water = []
-    chord_air = []
-    length_air = 1
-    length_water = 1
-    # scanning signal
-    for ii in range(0,len(signal)-1):
-        if (signal[ii] == 1):               # Tip is in the air...
-            if (signal[ii+1] == 1):         # and will keep on being in the air
-                length_air = length_air + 1
-                if (ii == len(signal)-2):   # last chord
-                    chord_air.append(length_air)
-            elif (signal[ii+1] == 0):       # and gets wet in next measurement
-                chord_air.append(length_air)
-                length_air = 1
-        elif (signal[ii] == 0):             # Tip is in the water...
-            if (signal[ii+1] == 0):         # and will keep on being in the water
-                length_water = length_water+1
-                if (ii == len(signal)-2):   # last chord
-                    chord_water.append(length_water)
-            elif (signal[ii+1] == 1):       # and gets dry in next measurement
-                chord_water.append(length_water)
-                length_water = 1
+    samples = np.asarray(signal)
+    if len(samples) < 2:
+        return [], [], 0.0
+
+    # A transition closes the preceding chord. Preserve the historical
+    # convention that a one-sample chord at the very end is not counted.
+    boundaries = np.flatnonzero(samples[1:] != samples[:-1]) + 1
+    ends = boundaries
+    if samples[-1] == samples[-2]:
+        ends = np.append(ends, len(samples))
+    starts = np.concatenate(([0], boundaries))[:len(ends)]
+    lengths = ends - starts
+    phases = samples[starts]
+    chord_water = lengths[phases == 0].tolist()
+    chord_air = lengths[phases == 1].tolist()
     # particle count rate (1/s)
     F = len(chord_air)/duration
 
@@ -198,15 +205,19 @@ def windows(chord_air, chord_water, n_particles, f_sample):
     stop = np.empty((n_windows),dtype='int')
     chord_times = []
     t = []
-    # adaptive windows
-    for ii in range(0,n_windows):
-        start[ii] = np.sum(chord_air[:n_particles*(ii+1)]) + np.sum(chord_water[:n_particles*(ii+1)])
-        stop[ii] = np.sum(chord_air[:n_particles*(ii+1)]) + np.sum(chord_water[:n_particles*(ii+1)])
-        chord_times.append(np.asarray(chord_air[n_particles*(ii):n_particles*(ii+1)])/f_sample)
+    # Each boundary is a prefix sum; compute all prefixes once.
+    if n_windows > 0:
+        air = np.asarray(chord_air, dtype=np.int64)
+        water = np.asarray(chord_water, dtype=np.int64)
+        indices = np.arange(1, n_windows + 1) * n_particles - 1
+        stop[:] = np.cumsum(air)[indices] + np.cumsum(water)[indices]
+        start[:] = stop
+        chord_times = [air[ii * n_particles:(ii + 1) * n_particles] / f_sample
+                       for ii in range(n_windows)]
     if n_windows > 0:
         start = np.roll(start, 1)
         start[0] = 0;                                  # first time window
-        stop[-1] = sum(chord_water)+sum(chord_air)-1   #+1; #adding the last segment
+        stop[-1] = int(np.sum(water) + np.sum(air) - 1)  # adding the last segment
 
         t = np.round((start+stop)/2.0)/f_sample        #calculation of time window centres
 
@@ -222,16 +233,26 @@ def velocity(n_lags, delta_x, f_sample, S1, S2):
         S1:                 binary signal of the trailing tip
         S2:                 binary signal of the trailing tip
     """
-    S1 = (S1 - np.mean(S1)) / (np.std(S1) * len(S1))
-    S2 = (S2 - np.mean(S2)) / (np.std(S2))
-    # calculate cross-correlation
-    corr = signal.correlate(S2,S1,mode='full')
-    # check if some correlation detected
-    if (sum(np.absolute(corr)) > 0.0):
-        # normalize
-        lags = signal.correlation_lags(len(S2), len(S1),mode='full')
-        # convert to time domain
-        tau = lags/f_sample
+    S1 = np.asarray(S1)
+    S2 = np.asarray(S2)
+    binary = (S1.dtype.kind in 'biu' and S2.dtype.kind in 'biu'
+              and S1.size and S2.size
+              and np.min(S1) >= 0 and np.max(S1) <= 1
+              and np.min(S2) >= 0 and np.max(S2) <= 1)
+    if binary:
+        # A constant window has no defined normalized correlation.
+        if np.min(S1) == np.max(S1) or np.min(S2) == np.max(S2):
+            return (np.nan,) * 6
+        corr = run_correlation(S1, S2)
+        has_correlation = True
+    else:
+        # Preserve the general-valued fallback for callers outside the
+        # binary phase-detection probe workflow.
+        normalized_1 = (S1 - np.mean(S1)) / (np.std(S1) * len(S1))
+        normalized_2 = (S2 - np.mean(S2)) / np.std(S2)
+        corr = signal.correlate(normalized_2, normalized_1, mode='full')
+        has_correlation = np.sum(np.abs(corr)) > 0.0
+    if has_correlation:
         # find peaks of the cross-correlation function
         pks = signal.find_peaks(corr)[0]
         prom = signal.peak_prominences(corr, pks)[0]
@@ -257,11 +278,12 @@ def velocity(n_lags, delta_x, f_sample, S1, S2):
         # maximum cross-correlation coefficient 
         Rxymax = corr[lagsRxymax]
         Rxymax_nofilter = corr[lagsRxymax]
-        Vx_nofilter = (delta_x)/tau[lagsRxymax]
+        lag_time = (lagsRxymax - (len(S1) - 1)) / f_sample
+        Vx_nofilter = (delta_x)/lag_time
         # filtering based on SPRthres and Rxymaxthres
         if  (Rxymax > ((SPR**2.0 + 1.0)*0.4)):        # length(lagsRxymax)==1
             # pseudo-instantaneous velocity (m/s)
-            Vx = (delta_x)/tau[lagsRxymax]
+            Vx = (delta_x)/lag_time
         else:
             Rxymax = np.nan
             Vx = np.nan
@@ -353,16 +375,19 @@ def cutoff_roc(u):
 
 def calc_velocity_awwcc(ii, start, stop, signal, f_sample, delta_x, args):
     n_lags = int(stop[ii] - start[ii])              # lags correspond to time windows
-    S1 = signal[start[ii]:stop[ii],0]               # raw signals leading tip
-    S2 = signal[start[ii]:stop[ii],1]               # raw signals trailing tip
+    if isinstance(signal, TransitionSignal):
+        window_signal = signal.window(int(start[ii]), int(stop[ii]))
+        S1, S2 = window_signal[:, 0], window_signal[:, 1]
+    else:
+        S1 = signal[start[ii]:stop[ii],0]           # raw signals leading tip
+        S2 = signal[start[ii]:stop[ii],1]           # raw signals trailing tip
     c_inst = np.mean(S1)                            # void fraction inside a window
     _,_,f_inst = chord(S1,(n_lags/f_sample))        # get F inside a window
     u_inst,Rxymax,SPR,u_inst_nofilter,Rxymax_nofilter,SPR_nofilter = velocity(n_lags,delta_x,f_sample,S1,S2) # pseudo-instantaneous velocities
-    tmp = pd.DataFrame(np.array([n_lags,u_inst,f_inst,c_inst,Rxymax,SPR,u_inst_nofilter,Rxymax_nofilter,SPR_nofilter])[np.newaxis, :], index=[ii], columns=['n_lags','u_inst','f_inst','c_inst','Rxymax','SPR','u_inst_nofilter','Rxymax_nofilter','SPR_nofilter'])
     # Display progress
     if args.progress:
-        printProgressBar(ii, n_windows, prefix = 'Progress:', suffix = 'Complete', length = 50)
-    return tmp
+        printProgressBar(ii, len(start), prefix = 'Progress:', suffix = 'Complete', length = 50)
+    return (n_lags,u_inst,f_inst,c_inst,Rxymax,SPR,u_inst_nofilter,Rxymax_nofilter,SPR_nofilter)
 
 def run_sig_proc_awcc(path, args, config, sensor_ids, duration, signal):
     """
@@ -386,20 +411,18 @@ def run_sig_proc_awcc(path, args, config, sensor_ids, duration, signal):
     # get the chord lengths in terms of number of samples
     # chord length [s] = chord length / f_sample
     print('Determining the air and water chord.\n')
-    chord_w,chord_a,F1 = chord(signal[:,0],duration)
+    if isinstance(signal, TransitionSignal):
+        chord_w, chord_a, F1 = signal.first_tip_chords(duration)
+    else:
+        chord_w,chord_a,F1 = chord(signal[:,0],duration)
 
     print('Determining the windows.\n')
     n_windows,start,stop,t,chord_times = windows(chord_a,chord_w,n_particles,f_sample)
     print('Determining the velocities.\n')
     # results = Parallel(n_jobs=int(args.nthreads),backend='multiprocessing')(delayed(calc_velocity_awwcc)() for ii in range(0,n_windows))
-    results = []
-    for ii in range(0, n_windows):
-        result = calc_velocity_awwcc(ii, start, stop, signal, f_sample, delta_x, args)
-        results.append(result)
-    if len(results) > 0:
-        results = pd.concat(results)
-    else:
-        results = pd.DataFrame(columns=['n_lags','u_inst','f_inst','c_inst','Rxymax','SPR','u_inst_nofilter','Rxymax_nofilter','SPR_nofilter'])
+    rows = [calc_velocity_awwcc(ii, start, stop, signal, f_sample, delta_x, args)
+            for ii in range(n_windows)]
+    results = pd.DataFrame(rows, columns=['n_lags','u_inst','f_inst','c_inst','Rxymax','SPR','u_inst_nofilter','Rxymax_nofilter','SPR_nofilter'])
     # plot the figure for evaluation of the filtering
     evaluate_filtering(path, results['SPR_nofilter'], results['Rxymax_nofilter'], results['u_inst_nofilter'])
 
@@ -1251,7 +1274,12 @@ def main():
     config_file = path / 'config.json'
     # Read the configuation JSON-file
     config = load_processing_config(config_file)
-    if args.compressed_signal == 'True':
+    ra_type = config['RECONSTRUCTION']['type']
+    if args.compressed_signal == 'True' and ra_type == 'dual_tip_AWCC':
+        signal, f_sample_stored, sensor_ids = read_transition_signal(path)
+        t_signal = None
+        duration = (signal.length - 1) / f_sample_stored
+    elif args.compressed_signal == 'True':
         t_signal,signal,sensor_ids = read_compressed_signal(path)
     else:
         # Create a H5-file reader
@@ -1267,10 +1295,10 @@ def main():
         reader.close()
 
     # the sampling duration
-    duration = t_signal[-1]-t_signal[0]
+    if t_signal is not None:
+        duration = t_signal[-1]-t_signal[0]
     n_sensors = len(sensor_ids)
     # Check the proccesing algorithm type
-    ra_type = config['RECONSTRUCTION']['type']
     # Check the interface-pairing signal processing algorithm
     bubbles_complete = []
     F1 = 0
@@ -1514,7 +1542,9 @@ def main():
     writer.writeDataSet('bubbles/bubble_frequency', np.array([F1],dtype='float64'), 'float64')
     # Create the IAC and void_fraction datasets
     writer.writeDataSet('IAC', np.array([IAC],dtype='float64'), 'float64')
-    writer.writeDataSet('voidFraction', np.array([np.mean(signal[:,0])]), 'float64')
+    measured_void_fraction = (signal.first_tip_mean() if isinstance(signal, TransitionSignal)
+                              else np.mean(signal[:, 0]))
+    writer.writeDataSet('voidFraction', np.array([measured_void_fraction]), 'float64')
     writer.writeDataSet('bubbles/data_rate', data_rate, 'float64')
     writer.close()
     time2 = time.time()

@@ -1,0 +1,21 @@
+{
+  "FLOW_PROPERTIES": {
+    "bubbles": {"shape": "sphere", "size_distribution": "constant", "diameter": 0.003},
+    "mean_velocity": [10.0, 0.0, 0.0],
+    "turbulent_intensity": [0.25, 0.125, 0.125],
+    "integral_timescale": [0.1, 0.05, 0.05],
+    "void_fraction": 0.01,
+    "duration": 1000.0,
+    "realization_frequency": 10000,
+    "shear_stress_corr_coeff": [0.0, -0.45, 0.0]
+  },
+  "PROBE": {
+    "sampling_frequency": 500000,
+    "sensors": [
+      {"id": 0, "relative_location": [-0.0025, 0.0005, 0.0]},
+      {"id": 1, "relative_location": [0.0025, -0.0005, 0.0]}
+    ]
+  },
+  "RECONSTRUCTION": {"type": "dual_tip_AWCC", "n_particles": 10},
+  "REPRODUCIBILITY": {"reproducible": "yes", "seed": 42}
+}

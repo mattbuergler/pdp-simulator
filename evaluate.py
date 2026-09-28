@@ -654,10 +654,13 @@ def remove_from_results(simulation_results,simulation_id):
 
 def window_average_fluid_velocity(t_fluid,u_fluid,awcc_windows):
     u_fluid_awcc = np.empty((len(awcc_windows),u_fluid.shape[1]))
-    for ii in range(0,len(awcc_windows)):
-        idx = np.where((t_fluid >= awcc_windows[ii,0]) & (t_fluid < awcc_windows[ii,1]))[0]
-        if len(idx) > 0:
-            u_fluid_awcc[ii,:] = np.nanmean(u_fluid[idx,:],axis=0)
+    # The fluid time vector is ordered. Find each window's bounds once instead
+    # of scanning the entire fluid series for every AWCC window.
+    starts = np.searchsorted(t_fluid, awcc_windows[:, 0], side='left')
+    stops = np.searchsorted(t_fluid, awcc_windows[:, 1], side='left')
+    for ii, (start, stop) in enumerate(zip(starts, stops)):
+        if start < stop:
+            u_fluid_awcc[ii,:] = np.nanmean(u_fluid[start:stop,:],axis=0)
         else:
             u_fluid_awcc[ii,:] = np.array([np.nan,np.nan,np.nan])
     return u_fluid_awcc

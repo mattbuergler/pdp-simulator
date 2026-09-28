@@ -55,7 +55,7 @@ class H5Reader(H5Base):
             PRINTERRORANDEXIT(f'dataset <{path}> does not exist')
         else:
             ds = self.getF5()[path]
-            if len(ds[:].shape) > 1:
+            if len(ds.shape) > 1:
                 ds = ds[row_start:(row_end+1),:]
             else:
                 ds = ds[row_start:(row_end+1)]

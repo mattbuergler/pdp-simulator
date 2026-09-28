@@ -24,7 +24,7 @@ import bisect
 import random
 import time
 import math
-from joblib import Parallel, delayed
+from joblib import Parallel, delayed, effective_n_jobs
 from pathlib import Path
 import shutil
 from scipy.signal import lfilter
@@ -34,6 +34,12 @@ try:
     from dataio.H5Writer import H5Writer
     from dataio.H5Reader import H5Reader
     from tools.globals import *
+    from tools.signal_transitions import (
+        contact_intervals,
+        encode_intervals,
+        merge_intervals,
+        regular_sample_chunk_indices,
+    )
 except ImportError:
     print("Error while importing modules")
     raise
@@ -55,6 +61,19 @@ def write_compressed_signal(path,t_signal,signal,sensor_ids):
         writer.writeDataSet(f'signal{int(sensor_id)}', compressed_signal[sensor_id], 'int32')
         ds_sig = writer.getDataSet(f'signal{int(sensor_id)}')
         ds_sig.attrs['sensor_id'] = int(sensor_id)
+    writer.close()
+
+
+def write_compressed_intervals(path, length, f_sample, sensor_ids, intervals):
+    """Write the established compressed format directly from contact intervals."""
+    writer = H5Writer(path / 'compressed_signal.h5', 'w')
+    writer.writeDataSet('length', np.array([length], dtype='int64'), 'int64')
+    writer.writeDataSet('f_s', np.array([f_sample], dtype='float64'), 'float64')
+    writer.writeDataSet('sensor_ids', np.array(sensor_ids, dtype='int16'), 'int16')
+    for sensor_id in sensor_ids:
+        compressed = encode_intervals(intervals[sensor_id], length)
+        writer.writeDataSet(f'signal{int(sensor_id)}', compressed, 'int64')
+        writer.getDataSet(f'signal{int(sensor_id)}').attrs['sensor_id'] = int(sensor_id)
     writer.close()
 
 def read_compressed_signal(path):
@@ -461,7 +480,7 @@ def interpolate_time_series(t_old, value_old, t_new):
     
     return result
 
-def get_bubble_properties(at,ax,t_f,x_f,u_f,control_volume_size):
+def get_bubble_properties(at,ax,t_f,x_f,u_f,control_volume_size,streamwise_monotonic=False):
     """ Returns the bubble properties.
 
         Parameters
@@ -472,20 +491,38 @@ def get_bubble_properties(at,ax,t_f,x_f,u_f,control_volume_size):
         x_f                 (np.array): Fluid trajectory vector
         u_f                 (np.array): Fluid velocity vector
         control_volume_size (np.array): The control volume size (x,y,z)
+        streamwise_monotonic (bool): Whether x_f[:, 0] is nondecreasing
 
         Returns
         ----------
         bubble_props (dict): A dictionary with bubble properties
     """
     # Find the time index
-    idxs = np.where(t_f <= at)
-    at_idx = idxs[0][np.abs(t_f[idxs] - at).argmin()]
+    # The fluid time vector is ordered, so the last sample at or before the
+    # arrival time can be found without scanning the entire chunk per bubble.
+    at_idx = int(np.searchsorted(t_f, at, side='right').item()) - 1
+    if at_idx < 0:
+        raise ValueError('Bubble arrives before the first fluid sample')
 
     # Compute the array slice indexes for subsequent operations
-    slice_from_at_idx = x_f[at_idx:, 0] - x_f[at_idx, 0]
-    condition = slice_from_at_idx <= control_volume_size[0]
-
-    et_idx = at_idx + np.sum(condition) + 2
+    if streamwise_monotonic:
+        # For a nondecreasing trajectory, searchsorted counts exactly the
+        # samples accepted by the original full-tail comparison.
+        position_at_arrival = x_f[at_idx, 0]
+        max_displacement = control_volume_size[0]
+        exit_position = position_at_arrival + max_displacement
+        exit_idx = int(np.searchsorted(x_f[:, 0], exit_position, side='right'))
+        # Recheck the boundary with the original subtraction to avoid a
+        # floating-point rounding difference in x_at + displacement.
+        while exit_idx > at_idx and x_f[exit_idx - 1, 0] - position_at_arrival > max_displacement:
+            exit_idx -= 1
+        while exit_idx < len(x_f) and x_f[exit_idx, 0] - position_at_arrival <= max_displacement:
+            exit_idx += 1
+        et_idx = exit_idx + 2
+    else:
+        slice_from_at_idx = x_f[at_idx:, 0] - x_f[at_idx, 0]
+        condition = slice_from_at_idx <= control_volume_size[0]
+        et_idx = at_idx + np.sum(condition) + 2
     if et_idx >= len(t_f):
         et_idx = len(t_f) - 1
 
@@ -533,7 +570,9 @@ def SBG_simulate_bubble_piercing(
         dt_probe,
         sensor_delta,
         start_idx_probe,
-        c_probe=np.array([])):
+        c_probe=np.array([]),
+        streamwise_monotonic=False,
+        prefilter_static_probe=True):
 
     """ Simulate bubble trajectories, track bubble trajectories with respect to
         to sensor locations and store during which time indices the bubble is 
@@ -553,6 +592,8 @@ def SBG_simulate_bubble_piercing(
         sensor_delta            (list): Locations of each individual sensor
         start_idx_probe          (int): Start index of probe time vector
         c_probe             (np.array): center location of the probe
+        streamwise_monotonic (bool): Whether x_f[:, 0] is nondecreasing
+        prefilter_static_probe (bool): Skip definite misses for stationary probes
 
         Returns
         ----------
@@ -561,7 +602,9 @@ def SBG_simulate_bubble_piercing(
     """
 
     # get bubble properties
-    bubble_props = get_bubble_properties(at, ax, t_f, x_f, u_f, control_volume_size)
+    bubble_props = get_bubble_properties(
+        at, ax, t_f, x_f, u_f, control_volume_size, streamwise_monotonic
+    )
     bubble_props['id'] = bubble_id
     t_p = bubble_props['time']
     x_p = bubble_props['trajectory']
@@ -574,6 +617,24 @@ def SBG_simulate_bubble_piercing(
     t_probe_kk = np.linspace(t_probe_kk_start, t_probe_kk_end, round((t_probe_kk_end-t_probe_kk_start)/dt_probe)+1)
     signal_indices = {}
     if len(t_probe_kk) > 0:
+        # With a stationary probe, a sensor outside the bubble trajectory's
+        # axis-aligned swept box cannot pierce it at any resampled time. The
+        # trajectory is linearly interpolated, so interpolation cannot leave
+        # this box. Keep the original path for vibrating probes.
+        candidate_sensors = sensor_delta
+        if prefilter_static_probe and len(c_probe) == 0:
+            lower = np.nextafter(np.min(x_p, axis=0), -np.inf)
+            upper = np.nextafter(np.max(x_p, axis=0), np.inf)
+            half_size = np.abs(b_size / 2.0)
+            candidate_sensors = {}
+            for idx, delta in sensor_delta.items():
+                if np.any((delta + half_size < lower) | (delta - half_size > upper)):
+                    signal_indices[idx] = (np.empty(0, dtype=int),)
+                else:
+                    candidate_sensors[idx] = delta
+            if not candidate_sensors:
+                return [idx_start, signal_indices, bubble_props]
+
         # Resample the trajectory to the sampling times of the probe
         x_p_resampled = interpolate_time_series(t_p, x_p, t_probe_kk)
         # Get probe locations that lie within the estimated timeframe
@@ -581,7 +642,7 @@ def SBG_simulate_bubble_piercing(
         abc = b_size / 2.0
 
         min_idx, max_idx = len(t_probe_kk)+1, -1
-        for idx, delta in sensor_delta.items():
+        for idx, delta in candidate_sensors.items():
             # Check if ellipsoid is pierced by sensor idx
             # Vectorized calculation for standard equation: (x/a)2 + (y/b)2 + (z/c)2 = 1
             c_probe_shifted = c_probe_kk + delta  
@@ -632,8 +693,8 @@ def SBG_simulate_bubble_piercing(
 
 
 def get_virtual_distance(pos1, pos2, control_volume_size):
-    y_min, y_max = np.min([pos1[1], pos2[1]]), np.max([pos1[1], pos2[1]])
-    z_min, z_max = np.min([pos1[2], pos2[2]]), np.max([pos1[2], pos2[2]])
+    y_min, y_max = min(pos1[1], pos2[1]), max(pos1[1], pos2[1])
+    z_min, z_max = min(pos1[2], pos2[2]), max(pos1[2], pos2[2])
 
     dx = abs(pos2[0] - pos1[0])
     dy = (control_volume_size[1]/2.0 - y_max) + (y_min + control_volume_size[1]/2.0)
@@ -737,19 +798,17 @@ def get_chunk_times_buffered(T,T_chunk,n_chunk,T_buffer):
     return chunk_times_buffered
 
 def get_chunk_indices(n_chunk,chunk_times,t):
-    chunk_idx = np.zeros((n_chunk,2)).astype('int')
-    for ii in range(n_chunk):
-        idx = np.array([])
-        if ii < (n_chunk-1):
-            # get indices
-            idx = np.where((chunk_times[ii,0] <= t) & (t < chunk_times[ii,1]))[0]
-        else:
-            # get indices
-            idx = np.where((chunk_times[ii,0] <= t) & (t <= chunk_times[ii,1]))[0]
-        if len(idx) > 0:
-            chunk_idx[ii,:] = np.array([int(np.min(idx)),int(np.max(idx))]).astype('int')
-        else:
-            chunk_idx[ii,:] =np.array([-1,-1])
+    # All simulator time vectors are sorted. Binary searches avoid scanning the
+    # entire signal, fluid, and bubble arrays once for every chunk.
+    times = np.asarray(t).reshape(-1)
+    chunk_idx = np.empty((n_chunk, 2), dtype=int)
+    if n_chunk == 0:
+        return chunk_idx
+    chunk_idx[:, 0] = np.searchsorted(times, chunk_times[:, 0], side='left')
+    chunk_idx[:, 1] = np.searchsorted(times, chunk_times[:, 1], side='left') - 1
+    # The final chunk includes its right endpoint; preceding chunks do not.
+    chunk_idx[-1, 1] = np.searchsorted(times, chunk_times[-1, 1], side='right') - 1
+    chunk_idx[chunk_idx[:, 0] > chunk_idx[:, 1]] = -1
     return chunk_idx
 
 def SBG_signal(
@@ -888,18 +947,17 @@ def SBG_signal(
     random_arrival_locations = np.array_split(random_arrival_locations,n_split)
     arrival_times_split = np.array_split(arrival_times,n_split)
     b_size_split = np.array_split(b_size,n_split)
-    arrival_locations_parallel = Parallel(n_jobs=nthreads,backend='multiprocessing') \
-        (delayed(place_bubbles_without_overlap)(
-                                        list(random_arrival_locations[kk]),
-                                        arrival_times_split[kk],
-                                        b_size_split[kk],
-                                        control_volume_size,
-                                        len(arrival_times_split[kk]),
-                                        nb_check_max,
-                                        um[0]) for kk in range(0,n_split))
-    arrival_locations = arrival_locations_parallel[0]
-    for kk in range(1,n_split):
-        arrival_locations = np.concatenate((arrival_locations,arrival_locations_parallel[kk]), axis=0)
+    placement_tasks = (delayed(place_bubbles_without_overlap)(
+        list(random_arrival_locations[kk]), arrival_times_split[kk],
+        b_size_split[kk], control_volume_size, len(arrival_times_split[kk]),
+        nb_check_max, um[0],
+    ) for kk in range(n_split))
+    if n_split == 1:
+        task = next(placement_tasks)
+        arrival_locations = task[0](*task[1], **task[2])
+    else:
+        arrival_locations_parallel = Parallel(n_jobs=nthreads, backend='multiprocessing')(placement_tasks)
+        arrival_locations = np.concatenate(arrival_locations_parallel, axis=0)
 
     # set x-value of arrival locations to start of control volume
     arrival_locations = np.concatenate((-control_volume_size[0]*np.ones((nb,1)),arrival_locations), axis=1)
@@ -922,18 +980,19 @@ def SBG_signal(
     dt_probe = 1.0 / f_probe
     # Number sampling time steps
     n_probe = math.ceil(T / dt_probe);
-    # Time vector
-    t_probe = np.linspace(0, n_probe*dt_probe, n_probe+1);
-    # Initialize signals with zeros
-    signal = np.zeros((n_probe+1, n_sensors)).astype('uint8')
-    # Create the H5-file writer
-    writer = H5Writer(path / 'binary_signal.h5', 'w')
-    # Write the time vector
-    writer.writeDataSet('time', t_probe, 'float64')
-    writer.writeDataSet('signal', signal, 'u1')
-    ds_sig = writer.getDataSet('signal')
-    ds_sig.attrs['sensor_id'] = list(sensor_delta.keys())
-    writer.close()
+    # The sparse path retains the established compressed file format, but
+    # never creates the full probe time vector or binary signal.
+    direct_transitions = compressed_signal == 'True' and 'VIBRATION' not in uncertainty
+    signal_intervals = {sensor_id: [] for sensor_id in sensor_delta} if direct_transitions else None
+    if not direct_transitions:
+        t_probe = np.linspace(0, n_probe*dt_probe, n_probe+1);
+        signal = np.zeros((n_probe+1, n_sensors)).astype('uint8')
+        writer = H5Writer(path / 'binary_signal.h5', 'w')
+        writer.writeDataSet('time', t_probe, 'float64')
+        writer.writeDataSet('signal', signal, 'u1')
+        ds_sig = writer.getDataSet('signal')
+        ds_sig.attrs['sensor_id'] = list(sensor_delta.keys())
+        writer.close()
     time2 = time.time()
     print(f'Finished signal initialization. Current runtime: {time2-time1:.2f} seconds\n')
 
@@ -970,10 +1029,13 @@ def SBG_signal(
     # Get start and end indices all chunks
     chunk_times = get_chunk_times(T,T_chunk,n_chunk)
     chunk_times_buffered = get_chunk_times_buffered(T,T_chunk,n_chunk,T_buffer)
-    chunk_indice_probe = get_chunk_indices(n_chunk,chunk_times_buffered,t_probe)
+    chunk_indice_probe = (regular_sample_chunk_indices(chunk_times_buffered, n_probe + 1, dt_probe)
+                          if direct_transitions else get_chunk_indices(n_chunk,chunk_times_buffered,t_probe))
     chunk_indice_fluid = get_chunk_indices(n_chunk,chunk_times_buffered,t_f)
     chunk_indice_bubbles = get_chunk_indices(n_chunk,chunk_times,arrival_times)
-    del signal, t_f, arrival_times, t_probe
+    del t_f, arrival_times
+    if not direct_transitions:
+        del signal, t_probe
     # Initialize some datasets
     # Create the H5-file writer
     writer = H5Writer(path / 'flow_data.h5', 'a')
@@ -997,17 +1059,16 @@ def SBG_signal(
     n_bubbles_pierced = 0
     cumulative_chord_times = 0.0
     cumulative_chord_times_overlap = 0.0
+    flow_writer = H5Writer(path / 'flow_data.h5', 'a')
     for ii in range(n_chunk):
-        # Create a H5-file reader
         start_idx_fluid = chunk_indice_fluid[ii,0]
         end_idx_fluid = chunk_indice_fluid[ii,1]
-        reader = H5Reader(path / 'flow_data.h5')
         # Read the time vector
-        t_f_chunk = reader.getRowsFromDataSet('fluid/time', start_idx_fluid, end_idx_fluid)[:]
+        t_f_chunk = flow_writer.getDataSet('fluid/time')[start_idx_fluid:end_idx_fluid + 1]
         # Read the fluid velocity
-        u_f_chunk = reader.getRowsFromDataSet('fluid/velocity', start_idx_fluid, end_idx_fluid)[:]
+        u_f_chunk = flow_writer.getDataSet('fluid/velocity')[start_idx_fluid:end_idx_fluid + 1, :]
         # Read the fluid trajectory
-        x_f_chunk = reader.getRowsFromDataSet('fluid/trajectory', start_idx_fluid, end_idx_fluid)[:]
+        x_f_chunk = flow_writer.getDataSet('fluid/trajectory')[start_idx_fluid:end_idx_fluid + 1, :]
         # if necessary, downsample velocity and trajectory
         # minimum frequency to have at approx. five trajectory values
         # while bubble travels between tips
@@ -1015,49 +1076,36 @@ def SBG_signal(
         f_u = 1.0/travel_time*5.0
         if f_u >= flow_properties['realization_frequency']:
             t_f_chunk,u_f_chunk,x_f_chunk = down_sample_fluid_time_series(t_f_chunk,u_f_chunk,x_f_chunk,f_u)
+        streamwise_monotonic = bool(np.all(np.diff(x_f_chunk[:, 0]) >= 0))
         start_idx_bubbles = chunk_indice_bubbles[ii,0]
         end_idx_bubbles = chunk_indice_bubbles[ii,1]
         if (start_idx_bubbles >= 0) & (end_idx_bubbles >= start_idx_bubbles):
-            arrival_times_chunk = reader.getRowsFromDataSet('bubbles/arrival_times', start_idx_bubbles, end_idx_bubbles)[:]
-            arrival_locations_chunk = reader.getRowsFromDataSet('bubbles/arrival_locations', start_idx_bubbles, end_idx_bubbles)[:]
-            b_size_chunk = reader.getRowsFromDataSet('bubbles/size', start_idx_bubbles, end_idx_bubbles)[:]
-            reader.close()
+            arrival_times_chunk = flow_writer.getDataSet('bubbles/arrival_times')[start_idx_bubbles:end_idx_bubbles + 1]
+            arrival_locations_chunk = flow_writer.getDataSet('bubbles/arrival_locations')[start_idx_bubbles:end_idx_bubbles + 1, :]
+            b_size_chunk = flow_writer.getDataSet('bubbles/size')[start_idx_bubbles:end_idx_bubbles + 1, :]
             nb_chunk = len(arrival_times_chunk)
             bubble_id_chunk = np.linspace(0,nb_chunk-1,nb_chunk).astype('int')
             start_idx_probe = chunk_indice_probe[ii,0]
             end_idx_probe = chunk_indice_probe[ii,1]
+            c_probe_chunk = np.array([])
             if 'VIBRATION' in uncertainty:
-                reader = H5Reader(path / 'flow_data.h5')
-                c_probe_chunk = reader.getRowsFromDataSet('probe/location', start_idx_probe, end_idx_probe)[:]
-                reader.close()
-                results = Parallel(n_jobs=nthreads,backend='multiprocessing') \
-                    (delayed(SBG_simulate_bubble_piercing)(bubble_id_chunk[kk], 
-                                                           t_f_chunk,
-                                                           x_f_chunk,
-                                                           u_f_chunk,
-                                                           control_volume_size,
-                                                           arrival_times_chunk[kk],
-                                                           arrival_locations_chunk[kk],
-                                                           b_size_chunk[kk,:],
-                                                           dt_probe,
-                                                           sensor_delta,
-                                                           start_idx_probe,
-                                                           c_probe_chunk
-                                                           ) for kk in range(0,nb_chunk))
+                c_probe_chunk = flow_writer.getDataSet('probe/location')[start_idx_probe:end_idx_probe + 1, :]
+            tasks = (delayed(SBG_simulate_bubble_piercing)(
+                bubble_id_chunk[kk], t_f_chunk, x_f_chunk, u_f_chunk,
+                control_volume_size, arrival_times_chunk[kk],
+                arrival_locations_chunk[kk], b_size_chunk[kk, :], dt_probe,
+                sensor_delta, start_idx_probe, c_probe_chunk,
+                streamwise_monotonic,
+            ) for kk in range(nb_chunk))
+            workers = effective_n_jobs(nthreads)
+            if workers == 1 or nb_chunk < 5000:
+                # Small chunks are faster without process setup and serialization.
+                results = [task[0](*task[1], **task[2]) for task in tasks]
             else:
-                results = Parallel(n_jobs=nthreads,backend='multiprocessing') \
-                    (delayed(SBG_simulate_bubble_piercing)(bubble_id_chunk[kk],
-                                                           t_f_chunk,
-                                                           x_f_chunk,
-                                                           u_f_chunk,
-                                                           control_volume_size,
-                                                           arrival_times_chunk[kk],
-                                                           arrival_locations_chunk[kk],
-                                                           b_size_chunk[kk,:],
-                                                           dt_probe,
-                                                           sensor_delta,
-                                                           start_idx_probe
-                                                           ) for kk in range(0,nb_chunk))
+                # Dispatch a handful of sizeable batches rather than thousands
+                # of tiny jobs that each carry the same fluid arrays.
+                batch_size = max(1, math.ceil(nb_chunk / (4 * workers)))
+                results = Parallel(n_jobs=nthreads, backend='loky', batch_size=batch_size)(tasks)
             time2 = time.time()
             print(f'Finished bubble tracking for chunk {ii+1} out of {n_chunk}. Current runtime: {time2-time1:.2f} seconds\n')
             print('\nWriting intermediate signal and results.\n')
@@ -1072,11 +1120,10 @@ def SBG_signal(
             chord_times_bubble = np.zeros((nb_chunk,len(sensors)))*np.nan
             chord_lengths_bubble = np.zeros((nb_chunk,len(sensors)))*np.nan
             pierced_bubbles = np.zeros((nb_chunk,len(sensors)),dtype='uint8')
-            # Create reader for signal
-            reader = H5Reader(path / 'binary_signal.h5')
-            # Read the signal
-            signal = reader.getRowsFromDataSet('signal', start_idx_probe, end_idx_probe)[:]
-            reader.close()
+            if not direct_transitions:
+                reader = H5Reader(path / 'binary_signal.h5')
+                signal = reader.getRowsFromDataSet('signal', start_idx_probe, end_idx_probe)[:]
+                reader.close()
 
 
             for jj,bubble in enumerate(results):
@@ -1095,10 +1142,15 @@ def SBG_signal(
                     if len(signal_indices[sensor_idx][0]) > 0:
                         if sensor_idx == 0:
                             cumulative_chord_times += float(len(signal_indices[sensor_idx][0]))/float(f_probe)
-                            overlap = np.sum(signal[(signal_indices[sensor_idx][0]+idx_start-start_idx_probe),sensor_idx] == 1)
-                            cumulative_chord_times_overlap += float(overlap)/float(f_probe)
+                            if not direct_transitions:
+                                overlap = np.sum(signal[(signal_indices[sensor_idx][0]+idx_start-start_idx_probe),sensor_idx] == 1)
+                                cumulative_chord_times_overlap += float(overlap)/float(f_probe)
                             n_bubbles_pierced+=1
-                        signal[(signal_indices[sensor_idx][0]+idx_start-start_idx_probe),sensor_idx] = 1
+                        if direct_transitions:
+                            absolute_indices = signal_indices[sensor_idx][0] + idx_start
+                            signal_intervals[sensor_idx].extend(contact_intervals(absolute_indices))
+                        else:
+                            signal[(signal_indices[sensor_idx][0]+idx_start-start_idx_probe),sensor_idx] = 1
                         pierced_bubbles[bid,sensor_idx] = 1
                         chord_times_bubble[bid,sensor_idx] = float(len(signal_indices[sensor_idx][0]))/float(f_probe)
                         chord_lengths_bubble[bid,sensor_idx] = float(len(signal_indices[sensor_idx][0]))/float(f_probe)*bubble_props["mean_velocity"][0]
@@ -1110,46 +1162,47 @@ def SBG_signal(
                 mean_reynolds_stresses_bubble[bid,:] = bubble_props["mean_reynolds_stress"]
                 turbulent_intensities_bubble[bid,:] = bubble_props["turbulent_intensity"]
 
-            # Create the H5-file writer
-            writer = H5Writer(path / 'binary_signal.h5', 'a')
-            # Write the time vector
-            writer.write2DataSet('signal', signal, row=start_idx_probe, col=0)
-            writer.close()
-            del signal
-            # Create the H5-file writer
-            writer = H5Writer(path / 'flow_data.h5', 'a')
+            if not direct_transitions:
+                writer = H5Writer(path / 'binary_signal.h5', 'a')
+                writer.write2DataSet('signal', signal, row=start_idx_probe, col=0)
+                writer.close()
+                del signal
             # Write the bubble properties
-            writer.write2DataSet('bubbles/arrival_times', arrival_times_bubble, row=start_idx_bubbles, col=0)
-            writer.write2DataSet('bubbles/arrival_locations', arrival_locations_bubble, row=start_idx_bubbles, col=0)
-            writer.write2DataSet('bubbles/exit_times', exit_times_bubble, row=start_idx_bubbles, col=0)
-            writer.write2DataSet('bubbles/exit_locations', exit_locations_bubble, row=start_idx_bubbles, col=0)
-            writer.write2DataSet('bubbles/mean_velocity', mean_velocities_bubble, row=start_idx_bubbles, col=0)
-            writer.write2DataSet('bubbles/reynold_stresses', mean_reynolds_stresses_bubble, row=start_idx_bubbles, col=0)
-            writer.write2DataSet('bubbles/turbulent_intensity', turbulent_intensities_bubble, row=start_idx_bubbles, col=0)
-            writer.write2DataSet('bubbles/pierced_bubbles', pierced_bubbles, row=start_idx_bubbles, col=0)
-            writer.write2DataSet('bubbles/chord_times', chord_times_bubble, row=start_idx_bubbles, col=0)
-            writer.write2DataSet('bubbles/chord_lengths', chord_lengths_bubble, row=start_idx_bubbles, col=0)
-            writer.close()
+            flow_writer.write2DataSet('bubbles/arrival_times', arrival_times_bubble, row=start_idx_bubbles, col=0)
+            flow_writer.write2DataSet('bubbles/arrival_locations', arrival_locations_bubble, row=start_idx_bubbles, col=0)
+            flow_writer.write2DataSet('bubbles/exit_times', exit_times_bubble, row=start_idx_bubbles, col=0)
+            flow_writer.write2DataSet('bubbles/exit_locations', exit_locations_bubble, row=start_idx_bubbles, col=0)
+            flow_writer.write2DataSet('bubbles/mean_velocity', mean_velocities_bubble, row=start_idx_bubbles, col=0)
+            flow_writer.write2DataSet('bubbles/reynold_stresses', mean_reynolds_stresses_bubble, row=start_idx_bubbles, col=0)
+            flow_writer.write2DataSet('bubbles/turbulent_intensity', turbulent_intensities_bubble, row=start_idx_bubbles, col=0)
+            flow_writer.write2DataSet('bubbles/pierced_bubbles', pierced_bubbles, row=start_idx_bubbles, col=0)
+            flow_writer.write2DataSet('bubbles/chord_times', chord_times_bubble, row=start_idx_bubbles, col=0)
+            flow_writer.write2DataSet('bubbles/chord_lengths', chord_lengths_bubble, row=start_idx_bubbles, col=0)
+
+    flow_writer.close()
 
     time2 = time.time()
     print(f'Finished processing all chunks in {time2-time1:.2f} seconds\n')
     print(f'Running final calulations')
-    # Create reader for signal
-    reader = H5Reader(path / 'binary_signal.h5')
-    # Read the time vector
-    t_signal = reader.getDataSet('time')[:]
-    # Read the signal time series
-    ds_signal = reader.getDataSet('signal')
-    # Get the signal
-    signal = np.array(ds_signal, dtype='int8')
-    # Get the corresponding sensor ids
-    sensor_ids = ds_signal.attrs['sensor_id']
-    reader.close()
+    if direct_transitions:
+        sensor_ids = list(sensor_delta.keys())
+        merged_intervals = {sensor_id: merge_intervals(signal_intervals[sensor_id])
+                            for sensor_id in sensor_ids}
+        first_tip_samples = sum(stop - start for start, stop in merged_intervals[0])
+        C_measured = first_tip_samples / (n_probe + 1)
+        cumulative_chord_times_overlap = (cumulative_chord_times * f_probe - first_tip_samples) / f_probe
+    else:
+        reader = H5Reader(path / 'binary_signal.h5')
+        t_signal = reader.getDataSet('time')[:]
+        ds_signal = reader.getDataSet('signal')
+        signal = np.array(ds_signal, dtype='int8')
+        sensor_ids = ds_signal.attrs['sensor_id']
+        reader.close()
+        C_measured = np.mean(signal[:,0])
 
     C_bubbles_overlapped = cumulative_chord_times_overlap/T
     C_bubbles_pierced = cumulative_chord_times/T
     F_bubbles_pierced = n_bubbles_pierced/T
-    C_measured = np.mean(signal[:,0])
     # Create the H5-file writer
     writer = H5Writer(path / 'flow_data.h5', 'a')
     # Write the bubble properties
@@ -1162,7 +1215,12 @@ def SBG_signal(
     print(f'Successfully generated the signal in {time2-time1:.2f} seconds.\n')
 
     # Finally, compress the signal to safe storage
-    if compressed_signal == 'True':
+    if direct_transitions:
+        # Match get_signal_frequency(np.linspace(0, n_probe * dt_probe, n_probe + 1)).
+        stored_frequency = 1.0 / ((n_probe * dt_probe) / n_probe)
+        write_compressed_intervals(path, n_probe + 1, stored_frequency,
+                                   sensor_ids, merged_intervals)
+    elif compressed_signal == 'True':
         print(f'Compressing signal.')
         write_compressed_signal(path,t_signal,signal,sensor_ids)
         # delete full signal

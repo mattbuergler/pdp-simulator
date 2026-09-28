@@ -68,6 +68,20 @@ Process the signal:
 uv run pdp-sim process path/to/simulation
 ```
 
+For a long stationary-probe simulation, use the transition-based binary signal path:
+
+```bash
+uv run pdp-sim generate -r signal -c True path/to/simulation
+uv run pdp-sim process -c True path/to/simulation
+```
+
+Generation writes `compressed_signal.h5` directly without allocating or writing the complete
+probe time vector and binary signal. Dual-tip AWCC reads its averaging windows from that file
+without decompressing the complete measurement. The format is the existing initial-state plus
+change-index encoding; AWCC uses only the recorded tip signals and probe settings, not bubble
+ground truth. Other processing algorithms and vibrating-probe generation retain the established
+dense-signal path before compression.
+
 For a real dual-tip recording, place `binary_signal.h5` and a minimal `config.json` in the measurement
 directory. The HDF5 file needs `time` and `signal` datasets and a `sensor_id` attribute on `signal`.
 The processor does not read `flow_data.h5` or simulation inputs. See the
