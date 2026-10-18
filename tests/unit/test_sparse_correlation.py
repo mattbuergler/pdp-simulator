@@ -18,7 +18,7 @@ def test_run_correlation_matches_fft(length: int) -> None:
         second = (rng.random(length) < 0.25).astype(np.int8)
         if np.min(first) == np.max(first) or np.min(second) == np.max(second):
             continue
-        normalized_first = ((first - first.mean()) / (first.std() * length))
+        normalized_first = (first - first.mean()) / (first.std() * length)
         normalized_second = (second - second.mean()) / second.std()
         expected = signal.correlate(normalized_second, normalized_first, mode="full")
         np.testing.assert_allclose(run_correlation(first, second), expected, rtol=1e-10, atol=1e-10)
@@ -41,9 +41,7 @@ def test_sparse_runs_match_fft() -> None:
         mode="full",
     )
     np.testing.assert_allclose(run_correlation(first, second), expected, rtol=1e-10, atol=1e-10)
-    filtered, r12, spr, unfiltered, _, _ = velocity(
-        len(first), 0.005, 500000, first, second
-    )
+    filtered, r12, spr, unfiltered, _, _ = velocity(len(first), 0.005, 500000, first, second)
     assert filtered == unfiltered == pytest.approx(125.0)
     assert r12 > 0.4 * (spr**2 + 1)
 

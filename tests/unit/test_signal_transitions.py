@@ -22,8 +22,7 @@ def test_transition_windows_and_chords_match_dense_signal(length: int) -> None:
     dense = generator.integers(0, 2, size=(length, 2), dtype=np.int8)
     compressed = [compress_signal(dense[:, column]) for column in range(2)]
     sparse = TransitionSignal(compressed, length)
-    for start, stop in [(0, length), (0, 1), (length - 1, length),
-                        (length // 3, 2 * length // 3)]:
+    for start, stop in [(0, length), (0, 1), (length - 1, length), (length // 3, 2 * length // 3)]:
         np.testing.assert_array_equal(sparse.window(start, stop), dense[start:stop])
     assert sparse.first_tip_chords(length / 500_000) == chord(dense[:, 0], length / 500_000)
     assert sparse.first_tip_mean() == np.mean(dense[:, 0])
@@ -44,8 +43,12 @@ def test_regular_chunk_indices_match_dense_search(duration: float, frequency: in
     length = int(np.ceil(duration / dt)) + 1
     times = np.linspace(0, (length - 1) * dt, length)
     starts = np.arange(0, duration, min(1.0, duration / 10))
-    chunks = np.column_stack((np.maximum(0, starts - 0.01),
-                              np.minimum(duration, starts + min(1.0, duration / 10) + 0.01)))
+    chunks = np.column_stack(
+        (
+            np.maximum(0, starts - 0.01),
+            np.minimum(duration, starts + min(1.0, duration / 10) + 0.01),
+        )
+    )
     actual = regular_sample_chunk_indices(chunks, length, dt)
     expected = get_chunk_indices(len(chunks), chunks, times)
     np.testing.assert_array_equal(actual, expected)

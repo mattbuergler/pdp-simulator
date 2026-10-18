@@ -2,11 +2,12 @@ stages:
   - quality
   - test
 
+variables:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  UV_CACHE_DIR: "$CI_PROJECT_DIR/.uv-cache"
+
 default:
   image: python:${PYTHON_VERSION}-slim
-  variables:
-    PIP_DISABLE_PIP_VERSION_CHECK: "1"
-    UV_CACHE_DIR: "$CI_PROJECT_DIR/.uv-cache"
   cache:
     key: "uv-${PYTHON_VERSION}-${CI_COMMIT_REF_SLUG}"
     paths:

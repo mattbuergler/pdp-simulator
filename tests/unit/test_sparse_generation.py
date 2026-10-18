@@ -24,8 +24,12 @@ def test_stationary_probe_direct_transitions_match_dense(tmp_path: Path) -> None
         shutil.copyfile(fixture / "flow_data.h5", directory / "flow_data.h5")
 
     arguments = (
-        config["FLOW_PROPERTIES"], config["PROBE"], config["REPRODUCIBILITY"],
-        {}, False, 1,
+        config["FLOW_PROPERTIES"],
+        config["PROBE"],
+        config["REPRODUCIBILITY"],
+        {},
+        False,
+        1,
     )
     SBG_signal(dense, *arguments, "False")
     SBG_signal(sparse, *arguments, "True")
@@ -45,8 +49,11 @@ def test_stationary_probe_direct_transitions_match_dense(tmp_path: Path) -> None
 
     with h5py.File(dense / "flow_data.h5") as old, h5py.File(sparse / "flow_data.h5") as new:
         dataset_names: list[str] = []
-        old.visititems(lambda name, item: dataset_names.append(name)
-                       if isinstance(item, h5py.Dataset) else None)
+        old.visititems(
+            lambda name, item: (
+                dataset_names.append(name) if isinstance(item, h5py.Dataset) else None
+            )
+        )
         for name in dataset_names:
             if name == "bubbles/pierced_overlapped_bubble_void_fraction":
                 np.testing.assert_allclose(old[name][:], new[name][:], rtol=0, atol=1e-14)

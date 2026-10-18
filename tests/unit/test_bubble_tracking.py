@@ -96,15 +96,27 @@ def test_bubble_piercing_prefilter_matches_original_path(vibrating: bool) -> Non
         arrival = np.array([0.004])
         bubble_location = np.array([0.0, *location])
         arguments = (
-            0, fluid_time, trajectory, velocity, control_volume,
-            arrival, bubble_location, bubble_size, sample_step, sensors, 0,
+            0,
+            fluid_time,
+            trajectory,
+            velocity,
+            control_volume,
+            arrival,
+            bubble_location,
+            bubble_size,
+            sample_step,
+            sensors,
+            0,
             probe_motion,
         )
         actual = SBG_simulate_bubble_piercing(
-            *arguments, streamwise_monotonic=True,
+            *arguments,
+            streamwise_monotonic=True,
         )
         reference = SBG_simulate_bubble_piercing(
-            *arguments, streamwise_monotonic=True, prefilter_static_probe=False,
+            *arguments,
+            streamwise_monotonic=True,
+            prefilter_static_probe=False,
         )
         assert actual[0] == reference[0]
         for sensor_id in sensors:
