@@ -11,20 +11,28 @@ three-dimensional stochastic carrier-flow time series, tracks a synthetic bubble
 virtual probe, generates binary sensor signals, and reconstructs flow quantities with multi-sensor
 signal-processing algorithms.
 
+<img src="doc/paper_figure_1_workflow.png" alt="Published PDP-SIM workflow: fluid, bubble, probe and algorithm parameters feed stochastic velocity generation, synthetic binary signals and AWCC reconstruction" width="620">
+
+*Figure 1 (cropped) from [Bürgler et al. (2024)](https://doi.org/10.1016/j.ijmultiphaseflow.2024.104978),
+© the authors, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).*
+
 The simulator supports reproducible uncertainty analysis of intrusive probe measurements. Its methods
 and scientific application are described in the peer-reviewed article
 [Bürgler et al. (2024)](https://doi.org/10.1016/j.ijmultiphaseflow.2024.104978).
 
-## Scientific workflow
+[Run a simulation](#usage) · [Process a real dual-tip recording](doc/measurements.md) ·
+[Explore the correction model and measured-profile example](https://github.com/mattbuergler/pdp-uq#readme)
 
-```text
-flow statistics -> stochastic velocity -> bubble/probe interaction
-                -> binary sensor signals -> reconstructed flow properties
-```
+## Scientific workflow
 
 Reconstructed quantities include velocity, void fraction, bubble diameter, interaction times, and
 interfacial area concentration (IAC), depending on the selected probe and processing algorithm. See
 [the architecture guide](doc/architecture.md) for the component and reproducibility boundaries.
+The signal-processing stage uses the probe signals and geometry, not the
+simulator's bubble trajectories or true velocities. The companion
+[PDP-UQ](https://github.com/mattbuergler/pdp-uq) repository uses simulation
+data to study AWCC bias and predictive uncertainty, then demonstrates its
+correction model on a measured spillway profile.
 
 ## Installation
 
